@@ -13,8 +13,8 @@
  *     recibida. No ve los ingresos totales.
  *
  * Instalación (una sola vez):
- *  1. En el Sheet: Extensiones → Apps Script. Junto al archivo que ya
- *     tienes, crea uno nuevo (+ → Secuencia de comandos) llamado
+ *  1. En el proyecto de Apps Script "Kong Gym App", junto al archivo que
+ *     ya tienes, crea uno nuevo (+ → Secuencia de comandos) llamado
  *     KongGym_Admin y pega este código.
  *  2. Cambia los dos PIN de abajo (6 dígitos, distintos entre sí).
  *  3. Implementar → Nueva implementación → Aplicación web →
@@ -35,6 +35,9 @@ const ADM = {
   DESFASE_ASISTENCIA: 4,  // fila en «Asistencias» = fila en «Socios» + 4
   METODOS: ['Efectivo', 'Transferencia', 'Tarjeta']
 };
+// ID del Sheet KongGym_Control_de_Pagos (por si el script no está ligado a la hoja)
+const ADM_SHEET_ID = '1msl-gFuLVfZ7RhCG9brJLqyAhaxYrR3xLMWAJsJVNj8';
+function adm_ss_() { return SpreadsheetApp.getActive() || SpreadsheetApp.openById(ADM_SHEET_ID); }
 const ADM_MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
 function doPost(e) {
@@ -94,7 +97,7 @@ function adm_escribir_(rol, fn) {
 
 /* ---------- Lectura ---------- */
 function adm_datos_(rol) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const hoy = new Date();
   const out = {
@@ -239,7 +242,7 @@ function adm_leerAsistencia_(ss, tz, hoy) {
 
 /* ---------- Socios ---------- */
 function adm_socioGuardar_(rol, s) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const sh = ss.getSheetByName('Socios');
   const nombre = String(s.nombre || '').trim().replace(/\s+/g, ' ');
@@ -278,7 +281,7 @@ function adm_socioGuardar_(rol, s) {
 
 /* ---------- Pagos ---------- */
 function adm_pago_(rol, p) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const socio = adm_socioPorFila_(ss, p.fila, p.id);
   if (!socio) return { ok: false, error: 'socio' };
@@ -301,7 +304,7 @@ function adm_pago_(rol, p) {
 
 /* ---------- Asistencias ---------- */
 function adm_asistencia_(req) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const socio = adm_socioPorFila_(ss, req.fila, req.id);
   if (!socio) return { ok: false, error: 'socio' };
@@ -350,7 +353,7 @@ function adm_asegurarMes_(ss, sh, tz, ahora) {
 
 /* ---------- Ventas e inventario ---------- */
 function adm_venta_(v) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const socio = adm_socioPorFila_(ss, v.fila, v.id);
   if (!socio) return { ok: false, error: 'socio' };
@@ -372,7 +375,7 @@ function adm_venta_(v) {
 }
 
 function adm_recibir_(req) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const prod = adm_producto_(ss, req.producto);
   if (!prod) return { ok: false, error: 'falta', campo: 'producto' };
   const piezas = Math.floor(Number(req.piezas));
@@ -383,7 +386,7 @@ function adm_recibir_(req) {
 }
 
 function adm_productoGuardar_(p) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = adm_ss_();
   const sh = ss.getSheetByName('Inventario');
   const nombre = String(p.nombre || '').trim();
   const precio = Number(p.precio);
