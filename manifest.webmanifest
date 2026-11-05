@@ -1,0 +1,17 @@
+{
+  "name": "Kong Gym · Administración",
+  "short_name": "Kong Admin",
+  "description": "Socios, cobros, asistencias y tienda de Kong Gym, conectado al Google Sheet.",
+  "lang": "es-MX",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070f22",
+  "theme_color": "#070f22",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
