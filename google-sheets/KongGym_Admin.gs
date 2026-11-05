@@ -33,6 +33,7 @@ const ADM = {
   PRIMERA_FILA_VENTAS: 5, ULTIMA_FILA_VENTAS: 2004,
   PRIMERA_FILA_INV: 5,    ULTIMA_FILA_INV: 34,
   DESFASE_ASISTENCIA: 4,  // fila en «Asistencias» = fila en «Socios» + 4
+  HOJA_REGISTRO: 'Registro de entradas', // fecha y hora de cada entrada hecha desde la app
   METODOS: ['Efectivo', 'Transferencia', 'Tarjeta']
 };
 // ID del Sheet KongGym_Control_de_Pagos (por si el script no está ligado a la hoja)
@@ -53,7 +54,7 @@ function doPost(e) {
       case 'datos': return adm_json_(adm_datos_(rol));
       case 'socio_guardar': return adm_json_(adm_escribir_(rol, () => adm_socioGuardar_(rol, req.socio || {})));
       case 'pago': return adm_json_(adm_escribir_(rol, () => adm_pago_(rol, req.pago || {})));
-      case 'asistencia': return adm_json_(adm_escribir_(rol, () => adm_asistencia_(req)));
+      case 'asistencia': return adm_json_(adm_escribir_(rol, () => adm_asistencia_(rol, req)));
       case 'venta': return adm_json_(adm_escribir_(rol, () => adm_venta_(req.venta || {})));
       case 'recibir': return adm_json_(adm_escribir_(rol, () => adm_recibir_(req)));
       case 'producto_guardar':
@@ -225,19 +226,48 @@ function adm_leerAsistencia_(ss, tz, hoy) {
     umbral: Number(sh.getRange('C4').getValue()) || 7,
     socios: {}, porDia: []
   };
+  const horas = adm_horasDeHoy_(ss, tz, hoy); // ID → hora (desde el Registro de entradas)
   const vals = sh.getRange(8, 1, 500, 38).getDisplayValues(); // A..AL
   const dia = Number(Utilities.formatDate(hoy, tz, 'd'));
   const mismoMes = res.mes === res.mesActual;
   vals.forEach((r) => {
     const id = String(r[0]).trim();
     if (!id) return;
+    const celda = mismoMes ? String(r[2 + dia]).trim() : '';
     res.socios[id] = {
-      hoy: mismoMes ? r[2 + dia] : '',
+      // Hora si se registró en la app; «✓» si solo hay una «A» (o una hora) capturada a mano
+      hoy: celda ? (horas[id] || (/^\d{1,2}:\d{2}/.test(celda) ? celda : '✓')) : '',
       dias: Number(r[34]) || 0, ultima: r[35], sinVenir: r[36] === '' ? null : Number(r[36]), aviso: r[37]
     };
   });
   res.porDia = sh.getRange('D5:AH5').getValues()[0].map(v => (v === '' ? null : Number(v) || 0));
   return res;
+}
+
+/* Horas de entrada de hoy según el Registro de entradas (lee solo las últimas filas) */
+function adm_horasDeHoy_(ss, tz, hoy) {
+  const reg = ss.getSheetByName(ADM.HOJA_REGISTRO);
+  const out = {};
+  if (!reg || reg.getLastRow() < 2) return out;
+  const ultima = reg.getLastRow(), desde = Math.max(2, ultima - 600);
+  const v = reg.getRange(desde, 1, ultima - desde + 1, 3).getDisplayValues();
+  const hoyTxt = Utilities.formatDate(hoy, tz, 'dd/MM/yyyy');
+  v.forEach(r => { if (r[0] === hoyTxt && r[2]) out[String(r[2]).trim()] = r[1]; });
+  return out;
+}
+
+function adm_hojaRegistro_(ss) {
+  let reg = ss.getSheetByName(ADM.HOJA_REGISTRO);
+  if (!reg) {
+    reg = ss.insertSheet(ADM.HOJA_REGISTRO);
+    reg.getRange('A1:E1').setValues([['Fecha', 'Hora', 'ID', 'Socio', 'Registró']])
+      .setFontWeight('bold').setBackground('#1f4e3d').setFontColor('#ffffff');
+    reg.setFrozenRows(1);
+    reg.getRange('A:A').setNumberFormat('dd/mm/yyyy');
+    reg.getRange('B:B').setNumberFormat('H:mm');
+    reg.setColumnWidth(4, 220);
+  }
+  return reg;
 }
 
 /* ---------- Socios ---------- */
@@ -303,7 +333,7 @@ function adm_pago_(rol, p) {
 }
 
 /* ---------- Asistencias ---------- */
-function adm_asistencia_(req) {
+function adm_asistencia_(rol, req) {
   const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const socio = adm_socioPorFila_(ss, req.fila, req.id);
@@ -317,16 +347,34 @@ function adm_asistencia_(req) {
   if (String(sh.getRange(filaA, 1).getDisplayValue()).trim() !== socio.id) return { ok: false, error: 'asistencia_fila' };
   const dia = Number(Utilities.formatDate(ahora, tz, 'd'));
   const celda = sh.getRange(filaA, 3 + dia);
+  const hoyYmd = Utilities.formatDate(ahora, tz, 'yyyy-MM-dd');
+  const reg = adm_hojaRegistro_(ss);
   if (req.borrar) {
     celda.clearContent();
+    // Quita también la(s) fila(s) de hoy de ese socio en el Registro
+    const hoyTxt = Utilities.formatDate(ahora, tz, 'dd/MM/yyyy');
+    const ultima = reg.getLastRow();
+    if (ultima >= 2) {
+      const desde = Math.max(2, ultima - 600);
+      const v = reg.getRange(desde, 1, ultima - desde + 1, 3).getDisplayValues();
+      for (let i = v.length - 1; i >= 0; i--) {
+        if (v[i][0] === hoyTxt && String(v[i][2]).trim() === socio.id) reg.deleteRow(desde + i);
+      }
+    }
     return { ok: true, borrado: true };
   }
-  const previa = celda.getDisplayValue();
-  if (previa) return { ok: true, ya: true, hora: previa };
-  const hhmm = String(req.hora || Utilities.formatDate(ahora, tz, 'HH:mm'));
+  const previa = String(celda.getDisplayValue()).trim();
+  if (previa) {
+    const h = adm_horasDeHoy_(ss, tz, ahora)[socio.id];
+    return { ok: true, ya: true, hora: h || (/^\d{1,2}:\d{2}/.test(previa) ? previa : '') };
+  }
+  const hhmm = Utilities.formatDate(ahora, tz, 'H:mm');
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return { ok: false, error: 'falta', campo: 'hora' };
-  celda.setValue((Number(m[1]) * 60 + Number(m[2])) / 1440).setNumberFormat('H:mm');
+  celda.setValue('A');
+  reg.appendRow([adm_fecha_(hoyYmd, tz), (Number(m[1]) * 60 + Number(m[2])) / 1440, socio.id,
+    socio.etiqueta.replace(/^\S+ - /, '').trim(), rol === 'dueno' ? 'Dueño' : 'Recepción']);
+  reg.getRange(reg.getLastRow(), 1).setNumberFormat('dd/mm/yyyy');
+  reg.getRange(reg.getLastRow(), 2).setNumberFormat('H:mm');
   return { ok: true, hora: hhmm, mesNuevo: mes.nuevo || false };
 }
 
@@ -468,6 +516,85 @@ function adm_num_(s) { const n = Number(String(s).replace(/[^\d.-]/g, '')); retu
 function adm_txt_(ss, hoja, a1) { const h = ss.getSheetByName(hoja); return h ? String(h.getRange(a1).getDisplayValue()) : ''; }
 function adm_json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ---------- Configuración única: asistencia con «A» ----------
+ * Ejecutar UNA vez desde el editor (Ejecutar → adm_configurarAsistenciaA):
+ *  - Las fórmulas de «Asistencias» cuentan la «A» (y también horas capturadas antes).
+ *  - «Resumen asistencia» toma las franjas horarias del «Registro de entradas».
+ *  - Las horas ya capturadas este mes pasan al Registro y la celda queda con «A».
+ */
+function adm_configurarAsistenciaA() {
+  const ss = adm_ss_();
+  const tz = ss.getSpreadsheetTimeZone();
+  const sh = ss.getSheetByName('Asistencias');
+  const reg = adm_hojaRegistro_(ss);
+  const R = "'" + ADM.HOJA_REGISTRO + "'";
+
+  // 1) Fórmulas de la cuadrícula
+  const cols = [];
+  for (let c = 4; c <= 34; c++) cols.push(c); // D..AH
+  cols.forEach(c => {
+    const L = sh.getRange(1, c).getA1Notation().replace(/\d+/g, '');
+    sh.getRange(5, c).setFormula('=IF(' + L + '7="","",COUNTA(' + L + '8:' + L + '507))');
+  });
+  const fAI = [], fAJ = [];
+  for (let r = 8; r <= 507; r++) {
+    fAI.push(['=IF(A' + r + '="","",COUNTA(D' + r + ':AH' + r + '))']);
+    fAJ.push(['=IF(A' + r + '="","",IF(AI' + r + '=0,"",MAXIFS($D$7:$AH$7,D' + r + ':AH' + r + ',"<>")))']);
+  }
+  sh.getRange('AI8:AI507').setFormulas(fAI);
+  sh.getRange('AJ8:AJ507').setFormulas(fAJ);
+  sh.getRange('D8:AH507').setDataValidation(SpreadsheetApp.newDataValidation()
+    .requireFormulaSatisfied('=OR(D8="",UPPER(D8)="A",ISNUMBER(D8))').setAllowInvalid(false)
+    .setHelpText('Escribe A para marcar la entrada (la app la pone sola).').build());
+  sh.getRange('A2').setValue('La app marca con «A» la entrada del socio en el día; la hora queda en «' + ADM.HOJA_REGISTRO + '». A mano también puedes escribir A.');
+
+  // 2) Pasar al Registro las horas ya capturadas en este mes
+  const fechas = sh.getRange(7, 4, 1, 31).getValues()[0];
+  const ids = sh.getRange(8, 1, 500, 2).getDisplayValues();
+  const grid = sh.getRange(8, 4, 500, 31);
+  const vals = grid.getValues(), disp = grid.getDisplayValues();
+  const filas = [];
+  let migradas = 0;
+  for (let d = 0; d < 31; d++) {
+    if (!(fechas[d] instanceof Date)) continue;
+    for (let i = 0; i < 500; i++) {
+      const v = vals[i][d];
+      if (v === '' || v === null) continue;
+      if (typeof v === 'number' || v instanceof Date) {
+        const m = String(disp[i][d]).match(/^(\d{1,2}):(\d{2})/);
+        if (m) filas.push([fechas[d], (Number(m[1]) * 60 + Number(m[2])) / 1440, ids[i][0], ids[i][1], 'Capturada a mano']);
+        vals[i][d] = 'A'; migradas++;
+      }
+    }
+  }
+  filas.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (filas.length) {
+    const ini = reg.getLastRow() + 1;
+    reg.getRange(ini, 1, filas.length, 5).setValues(filas);
+    reg.getRange(ini, 1, filas.length, 1).setNumberFormat('dd/mm/yyyy');
+    reg.getRange(ini, 2, filas.length, 1).setNumberFormat('H:mm');
+  }
+  grid.setValues(vals);
+
+  // 3) Franjas horarias del Resumen desde el Registro (solo el mes de «Asistencias»)
+  const rs = ss.getSheetByName('Resumen asistencia');
+  let franjas = 0;
+  if (rs) {
+    const mesIni = 'DATE(YEAR(Asistencias!$C$3),MONTH(Asistencias!$C$3),1)';
+    const mesFin = 'EOMONTH(Asistencias!$C$3,0)';
+    for (let r = 14; r <= 40; r++) {
+      const x = rs.getRange(r, 2).getFormula();
+      const m = x.match(/TIME\((\d+),0,0\).*TIME\((\d+),0,0\)/);
+      if (!m || x.indexOf('Asistencias!$D$8') < 0) continue;
+      rs.getRange(r, 2).setFormula('=COUNTIFS(' + R + '!$B:$B,">="&TIME(' + m[1] + ',0,0),' + R + '!$B:$B,"<"&TIME(' + m[2] + ',0,0),' +
+        R + '!$A:$A,">="&' + mesIni + ',' + R + '!$A:$A,"<="&' + mesFin + ')');
+      franjas++;
+    }
+  }
+  SpreadsheetApp.flush();
+  console.log('Horas pasadas al Registro: ' + filas.length + ' · celdas cambiadas a A: ' + migradas + ' · franjas actualizadas: ' + franjas);
 }
 
 /* Prueba manual desde el editor: Ejecutar → adm_probar */

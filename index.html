@@ -253,6 +253,7 @@ function dayLabel(ymd) {
   const d = new Date(ymd + 'T12:00:00');
   return `${DIAS[d.getDay()][0].toUpperCase() + DIAS[d.getDay()].slice(1)} ${ymdNice(ymd)}`;
 }
+const horaTxt = h => (!h || h === '✓' ? 'hoy' : h);
 const firstName = n => String(n || '').trim().split(/\s+/)[0] || '';
 const initial = n => (String(n || '?').trim()[0] || '?').toUpperCase();
 function badge(estado) {
@@ -540,14 +541,14 @@ function openSocio(fila) {
       <div><span>Último pago</span><b>${esc(dmyNice(s.ultimoPago, true))}</b></div>
       <div><span>Inscripción</span><b>${esc(dmyNice(s.inscripcion, true))}</b></div>
       <div><span>WhatsApp</span><b>${s.wa ? esc(s.wa) : '<span class="red">Falta</span>'}</b></div>
-      <div><span>Este mes vino</span><b>${a.dias || 0} día${a.dias === 1 ? '' : 's'}${a.hoy ? ` · hoy ${esc(a.hoy)}` : ''}</b></div>
+      <div><span>Este mes vino</span><b>${a.dias || 0} día${a.dias === 1 ? '' : 's'}${a.hoy ? ` · entró ${a.hoy === '✓' ? 'hoy' : esc(a.hoy)}` : ''}</b></div>
       ${s.nacimiento ? `<div><span>Nacimiento</span><b>${esc(dmyNice(s.nacimiento, true))}</b></div>` : ''}
       ${s.emergencia ? `<div><span>Emergencia</span><b>${esc(s.emergencia)}</b></div>` : ''}
       ${s.notas ? `<div style="grid-column:1/-1"><span>Notas</span><b>${esc(s.notas)}</b></div>` : ''}
     </div>
     ${a.aviso ? `<div class="note warn">${esc(a.aviso)}</div>` : ''}
     <div class="row">
-      ${s.estado !== 'Baja' ? (a.hoy ? `<button class="btn ghost" disabled>✅ Entró ${esc(a.hoy)}</button>` : `<button class="btn" data-save id="ent">✅ Entrada</button>`) : ''}
+      ${s.estado !== 'Baja' ? (a.hoy ? `<button class="btn ghost" disabled>✅ Entró ${a.hoy === '✓' ? 'hoy' : esc(a.hoy)}</button>` : `<button class="btn" data-save id="ent">✅ Entrada</button>`) : ''}
       <button class="btn ${a.hoy || s.estado === 'Baja' ? '' : 'ghost'}" id="cob">💵 Cobrar</button>
     </div>
     <div style="margin-top:10px">${recordar}${chat}</div>
@@ -683,7 +684,7 @@ function openPago(pre) {
 
 /* ===================== ASISTENCIA ===================== */
 async function registrarEntrada(s, fromSheet) {
-  const r = await send('asistencia', { fila: s.fila, id: s.id }, r => r.ya ? `${firstName(s.nombre)} ya había entrado a las ${r.hora}` : `Entrada de ${firstName(s.nombre)} · ${r.hora} ✅`);
+  const r = await send('asistencia', { fila: s.fila, id: s.id }, r => r.ya ? `${firstName(s.nombre)} ya había entrado ${r.hora ? 'a las ' + r.hora : 'hoy'}` : `Entrada de ${firstName(s.nombre)} · ${r.hora} ✅`);
   if (r && fromSheet) openSocio(s.fila);
   if (r && !fromSheet) { S.ui.asisQ = ''; render(); const q = $('#aq'); if (q) q.focus(); }
   if (r && s.estado === 'Vencido') setTimeout(() => toast(`Ojo: la membresía de ${firstName(s.nombre)} está vencida`, true), 2700);
@@ -700,7 +701,7 @@ function renderAsistencia(m) {
     <div class="search"><input id="aq" placeholder="Registrar entrada: nombre o ID" value="${esc(S.ui.asisQ)}" autocomplete="off"></div>
     <div class="card flush" id="ares" style="display:none"></div>
     <h2>Hoy <span class="n">${hoyList.length}</span></h2>
-    <div class="card flush">${hoyList.length ? hoyList.map(s => `<div class="li"><div class="av">${esc(initial(s.nombre))}</div><div class="mid tap" data-f="${s.fila}"><div class="t">${esc(s.nombre)}</div><div class="s">${esc(s.id)} · ${badge(s.estado)}</div></div><div class="end"><b class="gold">${esc(asisOf(s).hoy)}</b><button class="small muted" data-del="${s.fila}" style="padding:4px 0">Quitar</button></div></div>`).join('') : '<div class="empty">Aún no hay entradas hoy</div>'}</div>
+    <div class="card flush">${hoyList.length ? hoyList.map(s => `<div class="li"><div class="av">${esc(initial(s.nombre))}</div><div class="mid tap" data-f="${s.fila}"><div class="t">${esc(s.nombre)}</div><div class="s">${esc(s.id)} · ${badge(s.estado)}</div></div><div class="end"><b class="gold">${esc(horaTxt(asisOf(s).hoy))}</b><button class="small muted" data-del="${s.fila}" style="padding:4px 0">Quitar</button></div></div>`).join('') : '<div class="empty">Aún no hay entradas hoy</div>'}</div>
     <h2>Más de ${A.umbral} días sin venir <span class="n">${faltan.length}</span></h2>
     <div class="card flush">${faltan.length ? faltan.map(s => {
       const url = waLink(s.wa, MSG_EXTRANAMOS.replace('{nombre}', firstName(s.nombre))), key = 'x' + s.id, sent = isSent(key);
@@ -718,7 +719,7 @@ function renderAsistencia(m) {
     res.innerHTML = list.length ? list.map(s => {
       const a = asisOf(s);
       return `<div class="li"><div class="av">${esc(initial(s.nombre))}</div><div class="mid"><div class="t">${esc(s.nombre)}</div><div class="s">${esc(s.id)} · ${badge(s.estado)}</div></div>
-        <div class="end">${a.hoy ? `<span class="inline-ok">✓ ${esc(a.hoy)}</span>` : `<button class="btn sm" data-in="${s.fila}">Entrada</button>`}</div></div>`;
+        <div class="end">${a.hoy ? `<span class="inline-ok">✓ ${esc(horaTxt(a.hoy))}</span>` : `<button class="btn sm" data-in="${s.fila}">Entrada</button>`}</div></div>`;
     }).join('') : '<div class="empty">Sin resultados</div>';
     $$('[data-in]', res).forEach(b => b.onclick = () => { b.disabled = true; b.textContent = '…'; registrarEntrada(socioBy(b.dataset.in)); });
   };
