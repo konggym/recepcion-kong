@@ -459,7 +459,7 @@ function renderInicio(m) {
       <a class="stat r" href="#socios" data-f="vencidos" style="text-decoration:none"><b>${p.vencidos}</b><span>Vencidos</span></a>
     </div>`;
   const pend = [];
-  if (!(d.caja && d.caja.turno)) pend.push(['💰', 'La caja está cerrada: abre turno para cobrar en efectivo', '#caja']);
+  if (d.caja && !d.caja.turno) pend.push(['💰', 'La caja está cerrada: abre turno para cobrar en efectivo', '#caja']);
   if (pc) pend.push(['📲', `${pc} recordatorio${pc > 1 ? 's' : ''} de pago por enviar`, '#cobros']);
   if (gracias) pend.push(['🙏', `${gracias} agradecimiento${gracias > 1 ? 's' : ''} para enviar a las ${esc(d.horaGracias)}`, '#cobros']);
   if (p.porAgotarse) pend.push(['📦', `${p.porAgotarse} producto${p.porAgotarse > 1 ? 's' : ''} agotado${p.porAgotarse > 1 ? 's' : ''} o por agotarse`, '#tienda', 'inv']);
@@ -675,7 +675,7 @@ function openPago(pre) {
         if (!st.s) return toast('Elige al socio', true);
         const monto = Number(String($('#pm').value).replace(/[^\d.]/g, ''));
         if (!(monto >= 0) || $('#pm').value === '') return toast('Escribe el monto', true);
-        if (st.metodo === 'Efectivo' && !C().turno) return pedirTurno();
+        if (st.metodo === 'Efectivo' && cajaActiva() && !C().turno) return pedirTurno();
         const r = await send('pago', { pago: { fila: st.s.fila, id: st.s.id, periodo: st.periodo, monto, metodo: st.metodo, fecha: st.fecha, notas: st.notas } },
           r => `Pago registrado${r.vence ? ' · vence ' + ymdNice(r.vence) : ''} ✅`);
         if (r) closeSheet();
@@ -782,7 +782,7 @@ function renderTienda(m) {
     $('#vsave').onclick = async () => {
       if (!V.socio) return toast('Elige al socio', true);
       if (!V.producto) return toast('Elige el producto', true);
-      if (V.metodo === 'Efectivo' && !C().turno) return pedirTurno();
+      if (V.metodo === 'Efectivo' && cajaActiva() && !C().turno) return pedirTurno();
       $('#vsave').disabled = true; $('#vsave').textContent = 'Guardando…';
       const r = await send('venta', { venta: { fila: V.socio.fila, id: V.socio.id, producto: V.producto, cantidad: V.cant, metodo: V.metodo } }, r => `Venta registrada · ${money(r.total)} ✅`);
       if (r) { S.ui.venta = { socio: null, producto: '', cant: 1, metodo: 'Efectivo' }; render(); if (r.aviso) setTimeout(() => toast(r.aviso.replace('⚠ ', ''), true), 2700); }
@@ -828,6 +828,7 @@ function openProducto(p) {
 }
 
 /* ===================== CAJA ===================== */
+const cajaActiva = () => !!(S.d && S.d.caja);
 const C = () => (S.d && S.d.caja) || { personal: [], categorias: [], origenes: [], prestamos: [], salidas: [], turno: null };
 const ymKey = (ymd, add) => { const d = new Date(ymd.slice(0, 7) + '-15T12:00:00'); d.setMonth(d.getMonth() + (add || 0)); return d.toISOString().slice(0, 7); };
 const mesNombre = k => MESL[Number(k.slice(5, 7)) - 1];
@@ -839,6 +840,7 @@ async function pedirTurno() {
   if (await ask('Para registrar efectivo primero hay que abrir un turno de caja.', 'Abrir turno')) openAbrirTurno();
 }
 function renderCaja(m) {
+  if (!cajaActiva()) { m.innerHTML = '<h1 style="margin-bottom:12px">Caja</h1><div class="note warn">La sección de caja estará lista en cuanto se actualice el script del Sheet. Mientras tanto, cobros y ventas funcionan como siempre.</div>'; return; }
   const c = C(), t = c.turno;
   const modes = [['turno', '💰 Turno'], ['salidas', '📤 Salidas']].concat(isOwner() ? [['metricas', '📊 Métricas']] : []);
   if (!modes.some(x => x[0] === S.ui.cajaMode)) S.ui.cajaMode = 'turno';
