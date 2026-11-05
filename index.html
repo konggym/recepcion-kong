@@ -405,6 +405,11 @@ function openSheet(html, bind) {
   $$('[data-close]', m).forEach(b => b.onclick = closeSheet);
   if (bind) bind(m);
 }
+function ask(msg, okText) {
+  return new Promise(res => openSheet(`${sheetHead(msg)}<div class="row"><button class="btn ghost" id="an">Cancelar</button><button class="btn" id="ak">${okText || 'Sí'}</button></div>`, () => {
+    $('#ak').onclick = () => { closeSheet(); res(true); }; $('#an').onclick = () => { closeSheet(); res(false); };
+  }));
+}
 function closeSheet() { const m = $('#modal'); if (m) { m.classList.add('hidden'); m.innerHTML = ''; } }
 const sheetHead = (t, sub) => `<div class="sheet-h"><div><h3>${t}</h3>${sub ? `<div class="muted small" style="margin-top:3px">${sub}</div>` : ''}</div><button class="x" data-close aria-label="Cerrar">✕</button></div>`;
 
@@ -487,7 +492,7 @@ function renderInicio(m) {
   });
   $$('.stat[data-f]', m).forEach(a => a.onclick = () => { S.ui.socFiltro = a.dataset.f; });
   $$('[data-x]', m).forEach(a => a.onclick = () => { if (a.dataset.x === 'inv') S.ui.tiendaMode = 'inv'; else S.ui.socFiltro = a.dataset.x; });
-  $('#out').onclick = () => { if (confirm('¿Cerrar sesión en este dispositivo?')) logout(); };
+  $('#out').onclick = async () => { if (await ask('¿Cerrar sesión en este dispositivo?', 'Cerrar sesión')) logout(); };
 }
 
 /* ===================== SOCIOS ===================== */
@@ -723,7 +728,7 @@ function renderAsistencia(m) {
   $$('a[data-k]', m).forEach(a => a.addEventListener('click', () => { markSent(a.dataset.k); setTimeout(() => render(), 300); }));
   $$('[data-del]', m).forEach(b => b.onclick = async () => {
     const s = socioBy(b.dataset.del);
-    if (!confirm(`¿Quitar la entrada de hoy de ${s.nombre}?`)) return;
+    if (!(await ask(`¿Quitar la entrada de hoy de ${esc(s.nombre)}?`, 'Quitar'))) return;
     await send('asistencia', { fila: s.fila, id: s.id, borrar: true }, 'Entrada quitada');
   });
 }
