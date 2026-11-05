@@ -34,6 +34,12 @@ const ADM = {
   PRIMERA_FILA_INV: 5,    ULTIMA_FILA_INV: 34,
   DESFASE_ASISTENCIA: 4,  // fila en «Asistencias» = fila en «Socios» + 4
   HOJA_REGISTRO: 'Registro de entradas', // fecha y hora de cada entrada hecha desde la app
+  HOJA_TURNOS: 'Turnos', HOJA_SALIDAS: 'Salidas', HOJA_PRESTAMOS: 'Préstamos',
+  COL_TURNO_PAGOS: 13,   // columna M de «Pagos»: turno en que se cobró
+  COL_TURNO_VENTAS: 11,  // columna K de «Ventas»: turno en que se vendió
+  CATEGORIAS: ['Compras', 'Servicios', 'Nómina', 'Obra y mejoras', 'Pago de préstamo', 'Retiro del dueño'],
+  ORIGENES: ['Caja', 'Cuenta / tarjeta'],
+  PERSONAL_DEFAULT: 'Jennifer, Ariadna, Dueño',
   METODOS: ['Efectivo', 'Transferencia', 'Tarjeta']
 };
 // ID del Sheet KongGym_Control_de_Pagos (por si el script no está ligado a la hoja)
@@ -55,8 +61,11 @@ function doPost(e) {
       case 'socio_guardar': return adm_json_(adm_escribir_(rol, () => adm_socioGuardar_(rol, req.socio || {})));
       case 'pago': return adm_json_(adm_escribir_(rol, () => adm_pago_(rol, req.pago || {})));
       case 'asistencia': return adm_json_(adm_escribir_(rol, () => adm_asistencia_(rol, req)));
-      case 'venta': return adm_json_(adm_escribir_(rol, () => adm_venta_(req.venta || {})));
+      case 'venta': return adm_json_(adm_escribir_(rol, () => adm_venta_(rol, req.venta || {})));
       case 'recibir': return adm_json_(adm_escribir_(rol, () => adm_recibir_(req)));
+      case 'turno_abrir': return adm_json_(adm_escribir_(rol, () => adm_turnoAbrir_(req)));
+      case 'turno_cerrar': return adm_json_(adm_escribir_(rol, () => adm_turnoCerrar_(req)));
+      case 'salida': return adm_json_(adm_escribir_(rol, () => adm_salida_(rol, req.salida || {})));
       case 'producto_guardar':
         if (rol !== 'dueno') return adm_json_({ ok: false, error: 'permiso' });
         return adm_json_(adm_escribir_(rol, () => adm_productoGuardar_(req.producto || {})));
@@ -148,14 +157,14 @@ function adm_datos_(rol) {
   out.pagos = [];
   if (pLast >= ADM.PRIMERA_FILA_PAGOS) {
     const desde = Math.max(ADM.PRIMERA_FILA_PAGOS, pLast - 399);
-    const pv = pg.getRange(desde, 1, pLast - desde + 1, 12).getValues();
+    const pv = pg.getRange(desde, 1, pLast - desde + 1, ADM.COL_TURNO_PAGOS).getValues();
     pv.forEach((r, i) => {
       if (!(r[0] instanceof Date) || !r[1]) return;
       out.pagos.push({
         fila: desde + i, fecha: adm_ymd_(r[0], tz), socio: String(r[1]).trim(), id: String(r[7]),
         nombre: String(r[8]).trim(), periodo: String(r[2]), monto: Number(r[3]) || 0, metodo: String(r[4]),
         recibio: String(r[5]), notas: String(r[6]), lista: Number(r[9]) || 0,
-        inicia: adm_ymd_(r[10], tz), vence: adm_ymd_(r[11], tz)
+        inicia: adm_ymd_(r[10], tz), vence: adm_ymd_(r[11], tz), turno: String(r[12] || '')
       });
     });
   }
@@ -166,13 +175,13 @@ function adm_datos_(rol) {
   out.ventas = [];
   if (vLast >= ADM.PRIMERA_FILA_VENTAS) {
     const desde = Math.max(ADM.PRIMERA_FILA_VENTAS, vLast - 299);
-    const vv = vt.getRange(desde, 1, vLast - desde + 1, 10).getValues();
+    const vv = vt.getRange(desde, 1, vLast - desde + 1, ADM.COL_TURNO_VENTAS).getValues();
     vv.forEach((r, i) => {
       if (!(r[0] instanceof Date) || !r[2]) return;
       out.ventas.push({
         fila: desde + i, fecha: adm_ymd_(r[0], tz), socio: String(r[1]).trim(), producto: String(r[2]),
         cantidad: Number(r[3]) || 0, precio: Number(r[4]) || 0, total: Number(r[5]) || 0,
-        metodo: String(r[6]), notas: String(r[7])
+        metodo: String(r[6]), notas: String(r[7]), turno: String(r[10] || '')
       });
     });
   }
@@ -214,6 +223,7 @@ function adm_datos_(rol) {
     out.panel.mensualidadesMes = Number(des[0][0]) || 0;
     out.panel.ventasMes = Number(des[1][0]) || 0;
   }
+  out.caja = adm_leerCaja_(ss, tz, rol, out);
   return out;
 }
 
@@ -322,11 +332,14 @@ function adm_pago_(rol, p) {
   if (ADM.METODOS.indexOf(p.metodo) < 0) return { ok: false, error: 'falta', campo: 'metodo' };
   const fecha = adm_fecha_(p.fecha, tz) || adm_fecha_(Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), tz);
 
+  const turno = adm_turnoAbierto_(ss);
+  if (p.metodo === 'Efectivo' && !turno) return { ok: false, error: 'sin_turno' };
   const sh = ss.getSheetByName('Pagos');
   const fila = adm_ultimaFila_(sh, ADM.PRIMERA_FILA_PAGOS, ADM.ULTIMA_FILA_PAGOS, [1, 4]) + 1;
   if (fila > ADM.ULTIMA_FILA_PAGOS) return { ok: false, error: 'lleno' };
   sh.getRange(fila, 1, 1, 7).setValues([[fecha, socio.etiqueta, p.periodo, monto, p.metodo,
     rol === 'dueno' ? 'Dueño' : 'Recepción', String(p.notas || '').trim()]]);
+  if (turno) sh.getRange(fila, ADM.COL_TURNO_PAGOS).setValue(turno.id);
   SpreadsheetApp.flush();
   const r = sh.getRange(fila, 10, 1, 3).getValues()[0];
   return { ok: true, fila: fila, lista: Number(r[0]) || 0, inicia: adm_ymd_(r[1], tz), vence: adm_ymd_(r[2], tz) };
@@ -400,7 +413,7 @@ function adm_asegurarMes_(ss, sh, tz, ahora) {
 }
 
 /* ---------- Ventas e inventario ---------- */
-function adm_venta_(v) {
+function adm_venta_(rol, v) {
   const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
   const socio = adm_socioPorFila_(ss, v.fila, v.id);
@@ -410,12 +423,15 @@ function adm_venta_(v) {
   const cant = Math.floor(Number(v.cantidad));
   if (!(cant >= 1)) return { ok: false, error: 'falta', campo: 'cantidad' };
   if (ADM.METODOS.indexOf(v.metodo) < 0) return { ok: false, error: 'falta', campo: 'metodo' };
+  const turno = adm_turnoAbierto_(ss);
+  if (v.metodo === 'Efectivo' && !turno) return { ok: false, error: 'sin_turno' };
   const sh = ss.getSheetByName('Ventas');
   const fila = adm_ultimaFila_(sh, ADM.PRIMERA_FILA_VENTAS, ADM.ULTIMA_FILA_VENTAS, [1, 4]) + 1;
   if (fila > ADM.ULTIMA_FILA_VENTAS) return { ok: false, error: 'lleno' };
   const hoy = adm_fecha_(Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), tz);
   sh.getRange(fila, 1, 1, 4).setValues([[hoy, socio.etiqueta, prod.nombre, cant]]);
   sh.getRange(fila, 7, 1, 2).setValues([[v.metodo, String(v.notas || '').trim()]]);
+  if (turno) sh.getRange(fila, ADM.COL_TURNO_VENTAS).setValue(turno.id);
   SpreadsheetApp.flush();
   const total = Number(sh.getRange(fila, 6).getValue()) || 0;
   const aviso = String(sh.getRange(fila, 10).getDisplayValue() || '');
@@ -516,6 +532,264 @@ function adm_num_(s) { const n = Number(String(s).replace(/[^\d.-]/g, '')); retu
 function adm_txt_(ss, hoja, a1) { const h = ss.getSheetByName(hoja); return h ? String(h.getRange(a1).getDisplayValue()) : ''; }
 function adm_json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* =====================================================================
+ * CAJA: turnos por persona, salidas de dinero, corte y préstamos
+ * ===================================================================== */
+const ADM_TURNO_COLS = ['ID', 'Persona', 'Fecha apertura', 'Hora apertura', 'Dejó el turno anterior', 'Efectivo inicial (contado)',
+  'Diferencia apertura', 'Cobros en efectivo', 'Ventas en efectivo', 'Salidas de caja', 'Esperado en caja', 'Contado al cierre',
+  'Diferencia', 'Motivo', 'Transferencias', 'Tarjeta', 'Fecha cierre', 'Hora cierre', 'Estado'];
+const ADM_SALIDA_COLS = ['Fecha', 'Hora', 'Categoría', 'Concepto', 'Pagado a', 'Monto', 'Origen', 'Préstamo', 'Turno', 'Registró', 'Notas'];
+
+/* Crea las pestañas de caja la primera vez (con el préstamo actual ya cargado) */
+function adm_asegurarCaja_(ss) {
+  if (ss.getSheetByName(ADM.HOJA_TURNOS) && ss.getSheetByName(ADM.HOJA_SALIDAS) && ss.getSheetByName(ADM.HOJA_PRESTAMOS)) return;
+  {
+    const head = (sh, cols) => {
+      sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold').setBackground('#1f4e3d').setFontColor('#ffffff').setWrap(true);
+      sh.setFrozenRows(1);
+    };
+    if (!ss.getSheetByName(ADM.HOJA_TURNOS)) {
+      const t = ss.insertSheet(ADM.HOJA_TURNOS);
+      head(t, ADM_TURNO_COLS);
+      t.getRange('C:C').setNumberFormat('dd/mm/yyyy'); t.getRange('Q:Q').setNumberFormat('dd/mm/yyyy');
+      t.getRange('D:D').setNumberFormat('H:mm'); t.getRange('R:R').setNumberFormat('H:mm');
+      t.getRange('E:P').setNumberFormat('$#,##0.00');
+    }
+    if (!ss.getSheetByName(ADM.HOJA_SALIDAS)) {
+      const s = ss.insertSheet(ADM.HOJA_SALIDAS);
+      head(s, ADM_SALIDA_COLS);
+      s.getRange('A:A').setNumberFormat('dd/mm/yyyy'); s.getRange('B:B').setNumberFormat('H:mm'); s.getRange('F:F').setNumberFormat('$#,##0.00');
+      s.getRange('C2:C5000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(ADM.CATEGORIAS, true).build());
+      s.getRange('G2:G5000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(ADM.ORIGENES, true).build());
+      s.setColumnWidth(4, 220);
+    }
+    if (!ss.getSheetByName(ADM.HOJA_PRESTAMOS)) {
+      const p = ss.insertSheet(ADM.HOJA_PRESTAMOS);
+      head(p, ['Préstamo', 'Monto total', 'Pagado antes de la app', 'Abono sugerido', 'Notas', 'Pagado total', 'Restante', 'Avance']);
+      p.getRange('A2:E2').setValues([['Préstamo $27,500', 27500, 1620, 270, '6 abonos diarios de $270 antes de usar la app']]);
+      const f = [];
+      for (let r = 2; r <= 30; r++) {
+        f.push(['=IF(A' + r + '="","",N(C' + r + ')+SUMIFS(' + "'" + ADM.HOJA_SALIDAS + "'" + '!$F:$F,' + "'" + ADM.HOJA_SALIDAS + "'" + '!$H:$H,A' + r + ',' + "'" + ADM.HOJA_SALIDAS + "'" + '!$C:$C,"Pago de préstamo"))',
+          '=IF(A' + r + '="","",B' + r + '-F' + r + ')', '=IF(OR(A' + r + '="",N(B' + r + ')=0),"",F' + r + '/B' + r + ')']);
+      }
+      p.getRange(2, 6, 29, 3).setFormulas(f);
+      p.getRange('B:D').setNumberFormat('$#,##0.00'); p.getRange('F:G').setNumberFormat('$#,##0.00'); p.getRange('H:H').setNumberFormat('0%');
+      p.setColumnWidth(1, 200); p.setColumnWidth(5, 260);
+    }
+    // Encabezados de turno en Pagos y Ventas, y lista de personal en Configuración
+    const pg = ss.getSheetByName('Pagos'); if (!pg.getRange(3, ADM.COL_TURNO_PAGOS).getValue()) pg.getRange(3, ADM.COL_TURNO_PAGOS).setValue('Turno');
+    const vt = ss.getSheetByName('Ventas'); if (!vt.getRange(4, ADM.COL_TURNO_VENTAS).getValue()) vt.getRange(4, ADM.COL_TURNO_VENTAS).setValue('Turno');
+    const cf = ss.getSheetByName('Configuración');
+    if (!cf.getRange('A31').getValue()) {
+      cf.getRange('A31:B31').setValues([['Personal que abre turno de caja (separado por comas)', ADM.PERSONAL_DEFAULT]]);
+      cf.getRange('B31').setBackground('#fff2cc');
+    }
+    SpreadsheetApp.flush();
+  }
+}
+
+function adm_turnoAbierto_(ss) {
+  const t = ss.getSheetByName(ADM.HOJA_TURNOS);
+  if (!t || t.getLastRow() < 2) return null;
+  const last = t.getLastRow(), desde = Math.max(2, last - 50);
+  const v = t.getRange(desde, 1, last - desde + 1, ADM_TURNO_COLS.length).getValues();
+  for (let i = v.length - 1; i >= 0; i--) {
+    if (v[i][18] === 'Abierto') return { fila: desde + i, id: String(v[i][0]), persona: String(v[i][1]), fecha: v[i][2], hora: v[i][3], inicial: Number(v[i][5]) || 0 };
+  }
+  return null;
+}
+
+/* Suma lo que entró y salió de caja en un turno */
+function adm_sumasTurno_(ss, id) {
+  const s = { cobros: 0, ventas: 0, salidas: 0, transferencias: 0, tarjeta: 0, movs: [] };
+  const metodo = (m, x) => { if (m === 'Transferencia') s.transferencias += x; else if (m === 'Tarjeta') s.tarjeta += x; };
+  const pg = ss.getSheetByName('Pagos');
+  const pl = adm_ultimaFila_(pg, ADM.PRIMERA_FILA_PAGOS, ADM.ULTIMA_FILA_PAGOS, [1, 4]);
+  if (pl >= ADM.PRIMERA_FILA_PAGOS) {
+    const d = Math.max(ADM.PRIMERA_FILA_PAGOS, pl - 300);
+    pg.getRange(d, 1, pl - d + 1, ADM.COL_TURNO_PAGOS).getValues().forEach(r => {
+      if (String(r[12]) !== id) return;
+      const x = Number(r[3]) || 0;
+      if (r[4] === 'Efectivo') s.cobros += x; else metodo(r[4], x);
+      s.movs.push({ tipo: 'pago', texto: String(r[8] || r[1]).trim() + ' · ' + r[2], metodo: String(r[4]), monto: x });
+    });
+  }
+  const vt = ss.getSheetByName('Ventas');
+  const vl = adm_ultimaFila_(vt, ADM.PRIMERA_FILA_VENTAS, ADM.ULTIMA_FILA_VENTAS, [1, 4]);
+  if (vl >= ADM.PRIMERA_FILA_VENTAS) {
+    const d = Math.max(ADM.PRIMERA_FILA_VENTAS, vl - 300);
+    vt.getRange(d, 1, vl - d + 1, ADM.COL_TURNO_VENTAS).getValues().forEach(r => {
+      if (String(r[10]) !== id) return;
+      const x = Number(r[5]) || 0;
+      if (r[6] === 'Efectivo') s.ventas += x; else metodo(r[6], x);
+      s.movs.push({ tipo: 'venta', texto: r[3] + ' × ' + r[2], metodo: String(r[6]), monto: x });
+    });
+  }
+  const sa = ss.getSheetByName(ADM.HOJA_SALIDAS);
+  if (sa && sa.getLastRow() >= 2) {
+    const l = sa.getLastRow(), d = Math.max(2, l - 300);
+    sa.getRange(d, 1, l - d + 1, ADM_SALIDA_COLS.length).getValues().forEach(r => {
+      if (String(r[8]) !== id || r[6] !== 'Caja') return;
+      const x = Number(r[5]) || 0;
+      s.salidas += x;
+      s.movs.push({ tipo: 'salida', texto: r[2] + ' · ' + r[3], metodo: 'Caja', monto: -x });
+    });
+  }
+  return s;
+}
+
+function adm_ultimoCierre_(ss) {
+  const t = ss.getSheetByName(ADM.HOJA_TURNOS);
+  if (!t || t.getLastRow() < 2) return null;
+  const last = t.getLastRow(), desde = Math.max(2, last - 50);
+  const v = t.getRange(desde, 1, last - desde + 1, ADM_TURNO_COLS.length).getValues();
+  for (let i = v.length - 1; i >= 0; i--) {
+    if (v[i][18] === 'Cerrado') return { persona: String(v[i][1]), contado: Number(v[i][11]) || 0, fecha: v[i][16], hora: v[i][17] };
+  }
+  return null;
+}
+
+function adm_turnoAbrir_(req) {
+  const ss = adm_ss_();
+  adm_asegurarCaja_(ss);
+  const tz = ss.getSpreadsheetTimeZone();
+  if (adm_turnoAbierto_(ss)) return { ok: false, error: 'turno_abierto' };
+  const persona = String(req.persona || '').trim();
+  if (adm_personal_(ss).indexOf(persona) < 0) return { ok: false, error: 'falta', campo: 'persona' };
+  const contado = Number(req.contado);
+  if (!(contado >= 0)) return { ok: false, error: 'falta', campo: 'contado' };
+  const ant = adm_ultimoCierre_(ss);
+  const dejo = ant ? ant.contado : contado;
+  const ahora = new Date();
+  const id = 'T-' + Utilities.formatDate(ahora, tz, 'yyMMdd-HHmm');
+  const fila = [id, persona, adm_fecha_(Utilities.formatDate(ahora, tz, 'yyyy-MM-dd'), tz), adm_horaNum_(ahora, tz), dejo, contado,
+    contado - dejo, '', '', '', '', '', '', String(req.motivo || '').trim(), '', '', '', '', 'Abierto'];
+  const t = ss.getSheetByName(ADM.HOJA_TURNOS);
+  t.appendRow(fila);
+  t.getRange(t.getLastRow(), 4).setNumberFormat('H:mm');
+  return { ok: true, id: id, diferencia: contado - dejo };
+}
+
+function adm_turnoCerrar_(req) {
+  const ss = adm_ss_();
+  const tz = ss.getSpreadsheetTimeZone();
+  const turno = adm_turnoAbierto_(ss);
+  if (!turno || turno.id !== String(req.id || '')) return { ok: false, error: 'sin_turno' };
+  const contado = Number(req.contado);
+  if (!(contado >= 0)) return { ok: false, error: 'falta', campo: 'contado' };
+  const s = adm_sumasTurno_(ss, turno.id);
+  const esperado = turno.inicial + s.cobros + s.ventas - s.salidas;
+  const dif = Math.round((contado - esperado) * 100) / 100;
+  let motivo = String(req.motivo || '').trim();
+  if (dif !== 0 && !motivo) return { ok: false, error: 'falta', campo: 'motivo' };
+  const ahora = new Date();
+  const t = ss.getSheetByName(ADM.HOJA_TURNOS);
+  const motivoApertura = String(t.getRange(turno.fila, 14).getValue() || '').trim();
+  if (motivoApertura) motivo = 'Apertura: ' + motivoApertura + (motivo ? ' · Cierre: ' + motivo : '');
+  t.getRange(turno.fila, 8, 1, 12).setValues([[s.cobros, s.ventas, s.salidas, esperado, contado, dif, motivo, s.transferencias, s.tarjeta,
+    adm_fecha_(Utilities.formatDate(ahora, tz, 'yyyy-MM-dd'), tz), adm_horaNum_(ahora, tz), 'Cerrado']]);
+  t.getRange(turno.fila, 18).setNumberFormat('H:mm');
+  return { ok: true, esperado: esperado, contado: contado, diferencia: dif };
+}
+
+function adm_salida_(rol, x) {
+  const ss = adm_ss_();
+  adm_asegurarCaja_(ss);
+  const tz = ss.getSpreadsheetTimeZone();
+  const cat = String(x.categoria || '');
+  if (ADM.CATEGORIAS.indexOf(cat) < 0) return { ok: false, error: 'falta', campo: 'categoria' };
+  if (cat === 'Retiro del dueño' && rol !== 'dueno') return { ok: false, error: 'permiso' };
+  const origen = rol === 'dueno' ? String(x.origen || 'Caja') : 'Caja'; // recepción solo registra caja chica
+  if (ADM.ORIGENES.indexOf(origen) < 0) return { ok: false, error: 'falta', campo: 'origen' };
+  const monto = Math.round(Number(x.monto) * 100) / 100;
+  if (!(monto > 0)) return { ok: false, error: 'falta', campo: 'monto' };
+  const concepto = String(x.concepto || '').trim();
+  if (!concepto) return { ok: false, error: 'falta', campo: 'concepto' };
+  let prestamo = '';
+  if (cat === 'Pago de préstamo') {
+    prestamo = String(x.prestamo || '').trim();
+    if (adm_prestamos_(ss).map(p => p.nombre).indexOf(prestamo) < 0) return { ok: false, error: 'falta', campo: 'prestamo' };
+  }
+  const turno = adm_turnoAbierto_(ss);
+  if (origen === 'Caja' && !turno) return { ok: false, error: 'sin_turno' };
+  const ahora = new Date();
+  const sh = ss.getSheetByName(ADM.HOJA_SALIDAS);
+  sh.appendRow([adm_fecha_(Utilities.formatDate(ahora, tz, 'yyyy-MM-dd'), tz), adm_horaNum_(ahora, tz), cat, concepto,
+    String(x.pagadoA || '').trim(), monto, origen, prestamo, origen === 'Caja' && turno ? turno.id : '',
+    rol === 'dueno' ? 'Dueño' : (turno ? turno.persona : 'Recepción'), String(x.notas || '').trim()]);
+  sh.getRange(sh.getLastRow(), 1).setNumberFormat('dd/mm/yyyy');
+  sh.getRange(sh.getLastRow(), 2).setNumberFormat('H:mm');
+  return { ok: true };
+}
+
+function adm_personal_(ss) {
+  const v = String(ss.getSheetByName('Configuración').getRange('B31').getDisplayValue() || ADM.PERSONAL_DEFAULT);
+  return v.split(',').map(x => x.trim()).filter(String);
+}
+
+function adm_prestamos_(ss) {
+  const p = ss.getSheetByName(ADM.HOJA_PRESTAMOS);
+  if (!p || p.getLastRow() < 2) return [];
+  return p.getRange(2, 1, Math.min(29, p.getLastRow() - 1), 8).getValues().filter(r => String(r[0]).trim()).map(r => ({
+    nombre: String(r[0]).trim(), monto: Number(r[1]) || 0, previo: Number(r[2]) || 0, abono: Number(r[3]) || 0,
+    notas: String(r[4]), pagado: Number(r[5]) || 0, restante: Number(r[6]) || 0
+  }));
+}
+
+function adm_leerCaja_(ss, tz, rol, out) {
+  adm_asegurarCaja_(ss);
+  const caja = { personal: adm_personal_(ss), categorias: ADM.CATEGORIAS, origenes: ADM.ORIGENES, prestamos: adm_prestamos_(ss) };
+  const t = adm_turnoAbierto_(ss);
+  if (t) {
+    const s = adm_sumasTurno_(ss, t.id);
+    caja.turno = { id: t.id, persona: t.persona, fecha: adm_ymd_(t.fecha, tz), hora: adm_horaTxt_(t.hora, tz), inicial: t.inicial,
+      cobros: s.cobros, ventas: s.ventas, salidas: s.salidas, transferencias: s.transferencias, tarjeta: s.tarjeta,
+      esperado: t.inicial + s.cobros + s.ventas - s.salidas, movs: s.movs };
+  } else caja.turno = null;
+  const u = adm_ultimoCierre_(ss);
+  caja.ultimoCierre = u ? { persona: u.persona, contado: u.contado, fecha: adm_ymd_(u.fecha, tz), hora: adm_horaTxt_(u.hora, tz) } : null;
+
+  // Salidas (las últimas 200)
+  const sa = ss.getSheetByName(ADM.HOJA_SALIDAS);
+  const todas = sa.getLastRow() >= 2 ? sa.getRange(2, 1, sa.getLastRow() - 1, ADM_SALIDA_COLS.length).getValues().filter(r => r[0] instanceof Date && Number(r[5])) : [];
+  caja.salidas = todas.slice(-200).map(r => ({
+    fecha: adm_ymd_(r[0], tz), hora: adm_horaTxt_(r[1], tz), categoria: String(r[2]), concepto: String(r[3]), pagadoA: String(r[4]),
+    monto: Number(r[5]) || 0, origen: String(r[6]), prestamo: String(r[7]), turno: String(r[8]), registro: String(r[9]), notas: String(r[10])
+  }));
+  if (rol !== 'dueno') { // recepción solo ve las salidas de caja
+    caja.salidas = caja.salidas.filter(x => x.origen === 'Caja' && x.categoria !== 'Retiro del dueño');
+    return caja;
+  }
+
+  // Métricas del dueño: gastos por mes y categoría (12 meses), cortes recientes
+  const meses = {};
+  todas.forEach(r => {
+    const k = Utilities.formatDate(r[0], tz, 'yyyy-MM');
+    meses[k] = meses[k] || {};
+    meses[k][r[2]] = (meses[k][r[2]] || 0) + (Number(r[5]) || 0);
+  });
+  caja.gastosMes = meses;
+  const tu = ss.getSheetByName(ADM.HOJA_TURNOS);
+  caja.cortes = tu.getLastRow() >= 2 ? tu.getRange(Math.max(2, tu.getLastRow() - 59), 1, Math.min(60, tu.getLastRow() - 1), ADM_TURNO_COLS.length).getValues()
+    .filter(r => r[18] === 'Cerrado').reverse().map(r => ({
+      id: String(r[0]), persona: String(r[1]), fecha: adm_ymd_(r[2], tz), hora: adm_horaTxt_(r[3], tz), inicial: Number(r[5]) || 0,
+      difApertura: Number(r[6]) || 0, cobros: Number(r[7]) || 0, ventas: Number(r[8]) || 0, salidas: Number(r[9]) || 0,
+      esperado: Number(r[10]) || 0, contado: Number(r[11]) || 0, diferencia: Number(r[12]) || 0, motivo: String(r[13]),
+      transferencias: Number(r[14]) || 0, tarjeta: Number(r[15]) || 0, fechaCierre: adm_ymd_(r[16], tz), horaCierre: adm_horaTxt_(r[17], tz)
+    })) : [];
+  return caja;
+}
+
+function adm_horaNum_(d, tz) {
+  const h = Number(Utilities.formatDate(d, tz, 'H')), m = Number(Utilities.formatDate(d, tz, 'm'));
+  return (h * 60 + m) / 1440;
+}
+function adm_horaTxt_(v, tz) {
+  if (typeof v === 'number') { const t = Math.round(v * 1440); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
+  if (v instanceof Date) return Utilities.formatDate(v, tz, 'H:mm');
+  return String(v || '');
 }
 
 /* ---------- Configuración única: asistencia con «A» ----------

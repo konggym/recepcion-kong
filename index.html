@@ -101,7 +101,7 @@ h3{font-size:18px;line-height:1.2}
 .seg.f{margin-bottom:0}
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:7;background:rgba(7,15,34,.58);box-shadow:0 -14px 30px -20px var(--glow),inset 0 1px 0 var(--glass-hi);border-top:1px solid var(--line);display:flex;justify-content:center;padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
 .tabs-in{display:flex;width:100%;max-width:560px}
-.tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;color:var(--muted);min-height:52px;position:relative}
+.tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px;color:var(--muted);min-height:52px;position:relative}
 .tab .ti{font-size:21px;filter:grayscale(1);opacity:.7}
 .tab.on{color:var(--leaf);text-shadow:0 0 12px var(--glow)}
 .tab.on .ti{filter:drop-shadow(0 0 8px var(--glow));opacity:1}
@@ -112,6 +112,7 @@ button.li:active,.li.tap:active{background:rgba(255,255,255,.05)}
 .li .mid{flex:1;min-width:0}
 .li .t{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .li .s{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.li.wrap .t,.li.wrap .s{white-space:normal}
 .li .end{text-align:right;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .av{width:40px;height:40px;border-radius:12px;flex:none;display:grid;place-items:center;font-family:var(--display);font-size:18px;color:var(--gold);background:rgba(255,178,46,.12);border:1px solid rgba(255,178,46,.3)}
 .badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;white-space:nowrap;border:1px solid transparent}
@@ -229,7 +230,7 @@ const ls = {
 const S = {
   pin: ls.get('pin', ''), rol: ls.get('rol', ''), d: ls.get('datos', null), at: ls.get('at', 0),
   loading: false, offline: false, sent: ls.get('sent', {}),
-  ui: { socFiltro: 'todos', socQ: '', cobMode: 'rec', tiendaMode: 'vender', asisQ: '', venta: { socio: null, producto: '', cant: 1, metodo: 'Efectivo' } }
+  ui: { cajaMode: 'turno', socFiltro: 'todos', socQ: '', cobMode: 'rec', tiendaMode: 'vender', asisQ: '', venta: { socio: null, producto: '', cant: 1, metodo: 'Efectivo' } }
 };
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -280,9 +281,9 @@ const ERR = {
   socio: 'No encontré a ese socio en el Sheet. Actualiza e intenta de nuevo.', lleno: 'Ya no hay filas libres en esa hoja del Sheet.',
   duplicado: 'Ya existe un producto con ese nombre.', permiso: 'Solo el dueño puede hacer esto.', mes_futuro: 'La pestaña Asistencias está en un mes futuro; revísala en el Sheet.',
   asistencia_fila: 'La fila de Asistencias no coincide con el socio; revisa el Sheet.', no_coincide: 'Los datos cambiaron en el Sheet; actualiza e intenta de nuevo.',
-  red: 'Sin conexión. Revisa tu internet e intenta de nuevo.', servidor: 'Hubo un error en el Sheet.'
+  red: 'Sin conexión. Revisa tu internet e intenta de nuevo.', turno_abierto: 'Ya hay un turno abierto: ciérralo antes de abrir otro.', sin_turno: 'Primero abre un turno en Caja para registrar efectivo.', servidor: 'Hubo un error en el Sheet.'
 };
-const CAMPOS = { nombre: 'el nombre', wa: 'un WhatsApp de 10 dígitos', membresia: 'la membresía', plan: 'el plan', periodo: 'el periodo', monto: 'el monto', metodo: 'el método de pago', producto: 'el producto', cantidad: 'la cantidad', piezas: 'las piezas', precio: 'el precio', hora: 'la hora' };
+const CAMPOS = { persona: 'quién abre el turno', contado: 'el efectivo contado', motivo: 'el motivo de la diferencia', categoria: 'la categoría', concepto: 'el concepto', origen: 'de dónde salió el dinero', prestamo: 'el préstamo', nombre: 'el nombre', wa: 'un WhatsApp de 10 dígitos', membresia: 'la membresía', plan: 'el plan', periodo: 'el periodo', monto: 'el monto', metodo: 'el método de pago', producto: 'el producto', cantidad: 'la cantidad', piezas: 'las piezas', precio: 'el precio', hora: 'la hora' };
 function errText(r) {
   if (!r) return ERR.red;
   if (r.error === 'falta') return 'Revisa ' + (CAMPOS[r.campo] || 'los datos');
@@ -370,7 +371,7 @@ document.addEventListener('keydown', e => {
 function logout() { S.pin = ''; S.rol = ''; S.d = null; ls.del('pin'); ls.del('rol'); ls.del('datos'); closeSheet(); renderLogin(); }
 
 /* ===================== ARMAZÓN ===================== */
-const TABS = [['inicio', '🏠', 'Inicio'], ['socios', '🦍', 'Socios'], ['cobros', '💵', 'Cobros'], ['asistencia', '✅', 'Asistencia'], ['tienda', '🥤', 'Tienda']];
+const TABS = [['inicio', '🏠', 'Inicio'], ['socios', '🦍', 'Socios'], ['cobros', '💵', 'Cobros'], ['asistencia', '✅', 'Entradas'], ['tienda', '🥤', 'Tienda'], ['caja', '💰', 'Caja']];
 const tab = () => { const h = location.hash.slice(1); return TABS.some(t => t[0] === h) ? h : 'inicio'; };
 function pendientesCobro() {
   return socios().filter(s => s.url && (s.estado === 'Por vencer' || s.estado === 'Vence hoy') && !isSent('r' + s.id)).length;
@@ -387,7 +388,7 @@ function render() {
   const pc = pendientesCobro();
   $('#tabs').innerHTML = TABS.map(([k, i, l]) => `<a class="tab ${k === t ? 'on' : ''}" href="#${k}" style="text-decoration:none"><span class="ti">${i}</span>${l}${k === 'cobros' && pc ? `<span class="dot">${pc}</span>` : ''}</a>`).join('');
   const m = $('#main');
-  ({ inicio: renderInicio, socios: renderSocios, cobros: renderCobros, asistencia: renderAsistencia, tienda: renderTienda })[t](m);
+  ({ inicio: renderInicio, socios: renderSocios, cobros: renderCobros, asistencia: renderAsistencia, tienda: renderTienda, caja: renderCaja })[t](m);
 }
 function renderTop() {
   const top = $('#top'); if (!top) return;
@@ -444,7 +445,7 @@ function renderInicio(m) {
   let h = `<section class="hero">
       <div class="eyebrow">${DIAS[now.getDay()]} ${now.getDate()} de ${MESL[now.getMonth()]}</div>
       <h1 style="margin-top:6px">Hola, ${isOwner() ? 'jefe' : 'equipo'} 🦍</h1>
-      <p class="muted" style="margin-top:4px">Hoy van <b class="gold">${entradasHoy}</b> entradas y <b class="gold">${money(ventasHoy)}</b> en ventas.</p>
+      <p class="muted" style="margin-top:4px">Hoy van <b class="gold">${entradasHoy}</b> entradas y <b class="gold">${money(ventasHoy)}</b> en ventas.</p>${d.caja && d.caja.turno ? `<p class="small" style="margin-top:6px">💰 Turno de <b>${esc(d.caja.turno.persona)}</b> · en caja ${money(d.caja.turno.esperado)}</p>` : ''}
     </section>
     <div class="qa-grid">
       <button class="qa" data-qa="entrada"><span>✅</span>Entrada</button>
@@ -458,6 +459,7 @@ function renderInicio(m) {
       <a class="stat r" href="#socios" data-f="vencidos" style="text-decoration:none"><b>${p.vencidos}</b><span>Vencidos</span></a>
     </div>`;
   const pend = [];
+  if (!(d.caja && d.caja.turno)) pend.push(['💰', 'La caja está cerrada: abre turno para cobrar en efectivo', '#caja']);
   if (pc) pend.push(['📲', `${pc} recordatorio${pc > 1 ? 's' : ''} de pago por enviar`, '#cobros']);
   if (gracias) pend.push(['🙏', `${gracias} agradecimiento${gracias > 1 ? 's' : ''} para enviar a las ${esc(d.horaGracias)}`, '#cobros']);
   if (p.porAgotarse) pend.push(['📦', `${p.porAgotarse} producto${p.porAgotarse > 1 ? 's' : ''} agotado${p.porAgotarse > 1 ? 's' : ''} o por agotarse`, '#tienda', 'inv']);
@@ -673,6 +675,7 @@ function openPago(pre) {
         if (!st.s) return toast('Elige al socio', true);
         const monto = Number(String($('#pm').value).replace(/[^\d.]/g, ''));
         if (!(monto >= 0) || $('#pm').value === '') return toast('Escribe el monto', true);
+        if (st.metodo === 'Efectivo' && !C().turno) return pedirTurno();
         const r = await send('pago', { pago: { fila: st.s.fila, id: st.s.id, periodo: st.periodo, monto, metodo: st.metodo, fecha: st.fecha, notas: st.notas } },
           r => `Pago registrado${r.vence ? ' · vence ' + ymdNice(r.vence) : ''} ✅`);
         if (r) closeSheet();
@@ -779,6 +782,7 @@ function renderTienda(m) {
     $('#vsave').onclick = async () => {
       if (!V.socio) return toast('Elige al socio', true);
       if (!V.producto) return toast('Elige el producto', true);
+      if (V.metodo === 'Efectivo' && !C().turno) return pedirTurno();
       $('#vsave').disabled = true; $('#vsave').textContent = 'Guardando…';
       const r = await send('venta', { venta: { fila: V.socio.fila, id: V.socio.id, producto: V.producto, cantidad: V.cant, metodo: V.metodo } }, r => `Venta registrada · ${money(r.total)} ✅`);
       if (r) { S.ui.venta = { socio: null, producto: '', cant: 1, metodo: 'Efectivo' }; render(); if (r.aviso) setTimeout(() => toast(r.aviso.replace('⚠ ', ''), true), 2700); }
@@ -823,8 +827,180 @@ function openProducto(p) {
   });
 }
 
+/* ===================== CAJA ===================== */
+const C = () => (S.d && S.d.caja) || { personal: [], categorias: [], origenes: [], prestamos: [], salidas: [], turno: null };
+const ymKey = (ymd, add) => { const d = new Date(ymd.slice(0, 7) + '-15T12:00:00'); d.setMonth(d.getMonth() + (add || 0)); return d.toISOString().slice(0, 7); };
+const mesNombre = k => MESL[Number(k.slice(5, 7)) - 1];
+function difBadge(x) {
+  if (!x) return '<span class="badge b-ok">Cuadró</span>';
+  return x < 0 ? `<span class="badge b-bad">Faltan ${money(-x)}</span>` : `<span class="badge b-warn">Sobran ${money(x)}</span>`;
+}
+async function pedirTurno() {
+  if (await ask('Para registrar efectivo primero hay que abrir un turno de caja.', 'Abrir turno')) openAbrirTurno();
+}
+function renderCaja(m) {
+  const c = C(), t = c.turno;
+  const modes = [['turno', '💰 Turno'], ['salidas', '📤 Salidas']].concat(isOwner() ? [['metricas', '📊 Métricas']] : []);
+  if (!modes.some(x => x[0] === S.ui.cajaMode)) S.ui.cajaMode = 'turno';
+  const mode = S.ui.cajaMode;
+  let h = `<h1 style="margin-bottom:12px">Caja</h1><div class="seg">${modes.map(([k, l]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  if (mode === 'turno') {
+    if (!t) {
+      const u = c.ultimoCierre;
+      h += `<section class="hero"><div class="eyebrow">Caja cerrada</div><h1 style="margin-top:6px">Sin turno abierto</h1>
+        <p class="muted" style="margin-top:6px">${u ? `${esc(u.persona)} cerró ${esc(dayLabel(u.fecha).toLowerCase())} a las ${esc(u.hora)} y dejó <b class="gold">${money(u.contado)}</b> en caja.` : 'Aún no hay cortes registrados.'}</p></section>
+        <button class="btn" id="abrir">🔓 Abrir turno</button>
+        <p class="muted small" style="margin-top:10px">Mientras no haya turno abierto no se pueden registrar cobros, ventas ni salidas en efectivo.</p>`;
+    } else {
+      h += `<section class="hero"><div class="eyebrow">Turno abierto · ${esc(dayLabel(t.fecha))} desde ${esc(t.hora)}</div>
+        <h1 style="margin-top:6px">Turno de ${esc(t.persona)}</h1>
+        <div class="muted small" style="margin-top:10px">Esperado en caja ahora</div><div class="big">${money(t.esperado)}</div></section>
+        <div class="card">
+          <div class="mbar"><span>Efectivo inicial</span><div style="flex:1"></div><b>${money(t.inicial)}</b></div>
+          <div class="mbar"><span>+ Cobros</span><div style="flex:1"></div><b class="green">${money(t.cobros)}</b></div>
+          <div class="mbar"><span>+ Ventas</span><div style="flex:1"></div><b class="green">${money(t.ventas)}</b></div>
+          <div class="mbar"><span>− Salidas</span><div style="flex:1"></div><b class="red">${money(t.salidas)}</b></div>
+          <div class="mbar" style="border-top:1px solid var(--line);padding-top:9px"><span><b>Esperado</b></span><div style="flex:1"></div><b class="gold">${money(t.esperado)}</b></div>
+          <p class="muted small" style="margin-top:10px">Informativo (no entra a la caja): transferencias ${money(t.transferencias)} · tarjeta ${money(t.tarjeta)}</p>
+        </div>
+        <div class="row"><button class="btn ghost" id="sal">📤 Salida de caja</button><button class="btn" id="cerrar">🔒 Hacer corte</button></div>
+        <h2>Movimientos del turno <span class="n">${t.movs.length}</span></h2>
+        <div class="card flush">${t.movs.length ? t.movs.slice().reverse().map(x => `<div class="li"><div class="av" style="font-family:inherit">${x.tipo === 'pago' ? '💵' : x.tipo === 'venta' ? '🥤' : '📤'}</div><div class="mid"><div class="t">${esc(x.texto)}</div><div class="s">${esc(x.metodo)}${x.metodo !== 'Efectivo' && x.metodo !== 'Caja' ? ' · informativo' : ''}</div></div><div class="end"><span class="money ${x.monto < 0 ? 'red' : ''}">${x.monto < 0 ? '−' : ''}${money(Math.abs(x.monto))}</span></div></div>`).join('') : '<div class="empty">Sin movimientos todavía</div>'}</div>`;
+    }
+  } else if (mode === 'salidas') {
+    const list = c.salidas.slice().reverse().slice(0, 80);
+    h += `<button class="btn" id="nsal">+ Registrar salida</button>
+      ${!isOwner() ? '<p class="muted small" style="margin-top:8px">Recepción registra solo salidas pagadas con efectivo de la caja.</p>' : ''}
+      <h2>Últimas salidas</h2><div class="card flush">${list.length ? list.map(x => `<div class="li"><div class="av" style="font-family:inherit">📤</div><div class="mid"><div class="t">${esc(x.concepto)}</div><div class="s">${esc(x.categoria)}${x.pagadoA ? ' · ' + esc(x.pagadoA) : ''} · ${esc(x.origen)} · ${esc(x.registro)}</div></div><div class="end"><span class="money red">−${money(x.monto)}</span><span class="muted small">${esc(dayLabel(x.fecha))}</span></div></div>`).join('') : '<div class="empty">Aún no hay salidas</div>'}</div>`;
+  } else {
+    h += metricasHtml();
+  }
+  m.innerHTML = h;
+  $$('.seg button', m).forEach(b => b.onclick = () => { S.ui.cajaMode = b.dataset.m; renderCaja(m); });
+  const on = (id, fn) => { const e = $('#' + id, m); if (e) e.onclick = fn; };
+  on('abrir', () => openAbrirTurno()); on('cerrar', () => openCerrarTurno()); on('sal', () => openSalida()); on('nsal', () => openSalida());
+  $$('[data-abono]', m).forEach(b => b.onclick = () => openSalida({ categoria: 'Pago de préstamo', prestamo: b.dataset.abono }));
+}
+function metricasHtml() {
+  const c = C(), p = S.d.panel, k = ymKey(hoy()), kp = ymKey(hoy(), -1), gm = c.gastosMes || {};
+  const gastos = key => Object.entries(gm[key] || {}).filter(([cat]) => cat !== 'Retiro del dueño').reduce((a, [, v]) => a + v, 0);
+  const retiros = key => (gm[key] || {})['Retiro del dueño'] || 0;
+  const meses = (p.meses || []).map((x, i) => ({ k: ymKey(hoy(), i - 11), mes: x.mes, ing: x.total }));
+  const ingK = p.ingresoMes || 0, ingP = (meses[10] || {}).ing || 0;
+  const resK = ingK - gastos(k), resP = ingP - gastos(kp), delta = resK - resP;
+  const cats = Object.entries(gm[k] || {}).sort((a, b) => b[1] - a[1]);
+  const catMax = Math.max(1, ...cats.map(x => x[1]));
+  const ult = meses.slice(-6), mx = Math.max(1, ...ult.map(x => Math.max(x.ing, gastos(x.k))));
+  return `<section class="hero"><div class="eyebrow">Resultado de ${mesNombre(k)}</div>
+      <div class="big ${resK < 0 ? 'red' : ''}" style="margin-top:4px">${resK < 0 ? '−' : ''}${money(Math.abs(resK))}</div>
+      <div class="muted small">Ingresos ${money(ingK)} − gastos ${money(gastos(k))}${retiros(k) ? ` · retiros del dueño ${money(retiros(k))} (aparte)` : ''}</div>
+      <div class="small" style="margin-top:6px">${delta >= 0 ? '<span class="green">▲' : '<span class="red">▼'} ${money(Math.abs(delta))}</span> <span class="muted">vs ${mesNombre(kp)} (${resP < 0 ? '−' : ''}${money(Math.abs(resP))})</span></div></section>
+    <div class="card"><b>Ingresos vs gastos</b><div class="bars" style="gap:8px">${ult.map(x => `<div class="bc"><div style="display:flex;gap:3px;align-items:flex-end;height:100%;width:100%"><i style="flex:1;height:${Math.max(2, Math.round(x.ing / mx * 92))}px" class="${x.ing ? '' : 'zero'}"></i><i style="flex:1;height:${Math.max(2, Math.round(gastos(x.k) / mx * 92))}px;background:linear-gradient(180deg,#ff9a80,var(--danger));box-shadow:none" class="${gastos(x.k) ? '' : 'zero'}"></i></div><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div>
+      <p class="muted small" style="margin-top:8px"><span class="gold">■</span> ingresos · <span class="red">■</span> gastos (sin retiros)</p></div>
+    <h2>Gastos de ${mesNombre(k)}</h2><div class="card">${cats.length ? cats.map(([cat, v]) => `<div class="mbar"><span>${esc(cat)}</span><div class="tr"><i style="width:${Math.round(v / catMax * 100)}%;${cat === 'Retiro del dueño' ? 'background:var(--muted)' : ''}"></i></div><b class="gold">${money(v)}</b></div>`).join('') : '<div class="empty">Sin salidas este mes</div>'}</div>
+    <h2>Préstamos</h2>${c.prestamos.length ? c.prestamos.map(x => {
+      const pct = x.monto ? Math.min(100, Math.round(x.pagado / x.monto * 100)) : 0, faltan = x.abono ? Math.ceil(Math.max(0, x.restante) / x.abono) : null;
+      return `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(x.nombre)}</b><span class="gold">${pct}%</span></div>
+        <div class="mbar"><div class="tr"><i style="width:${pct}%"></i></div></div>
+        <div class="kv" style="margin-bottom:8px"><div><span>Pagado</span><b class="green">${money(x.pagado)}</b></div><div><span>Restante</span><b>${money(x.restante)}</b></div>
+        <div><span>Monto total</span><b>${money(x.monto)}</b></div><div><span>Abono</span><b>${x.abono ? money(x.abono) + (faltan !== null ? ` · faltan ≈${faltan}` : '') : '—'}</b></div></div>
+        ${x.restante > 0 ? `<button class="btn sm ghost" data-abono="${esc(x.nombre)}">+ Registrar abono</button>` : '<span class="badge b-ok">Liquidado</span>'}</div>`;
+    }).join('') : '<div class="card empty">Sin préstamos</div>'}
+    <h2>Historial de cortes</h2><div class="card flush">${(c.cortes || []).length ? c.cortes.slice(0, 30).map(x => `<div class="li wrap"><div class="av">${esc(initial(x.persona))}</div><div class="mid"><div class="t">${esc(x.persona)} · ${esc(dayLabel(x.fechaCierre || x.fecha))} ${esc(x.hora)}–${esc(x.horaCierre)}</div><div class="s">Esperado ${money(x.esperado)} · contó ${money(x.contado)}${x.motivo ? ' · ' + esc(x.motivo) : ''}</div>${x.difApertura ? `<div class="s gold">Al abrir: ${x.difApertura < 0 ? 'faltaban' : 'sobraban'} ${money(Math.abs(x.difApertura))}</div>` : ''}</div><div class="end">${difBadge(x.diferencia)}</div></div>`).join('') : '<div class="empty">Aún no hay cortes</div>'}</div>`;
+}
+function openAbrirTurno() {
+  const c = C(), u = c.ultimoCierre, st = { persona: '' };
+  openSheet(`${sheetHead('Abrir turno', u ? `${esc(u.persona)} dejó ${money(u.contado)} en caja` : 'Primer turno: cuenta el efectivo con el que empiezas')}
+    <label class="f"><span>¿Quién abre?</span><div class="pills" style="margin:0">${c.personal.map(x => `<button type="button" class="pill" data-p="${esc(x)}">${esc(x)}</button>`).join('')}</div></label>
+    <label class="f"><span>Efectivo que hay en caja al recibir</span><input id="tc" inputmode="decimal" placeholder="0"></label>
+    <div id="tdif"></div>
+    <label class="f" id="tmw" style="display:none"><span>¿Por qué no coincide?</span><input id="tm" placeholder="Ej. faltó el cambio de $50"></label>
+    <button class="btn" data-save id="ts">Abrir turno</button>`, () => {
+    $$('[data-p]').forEach(b => b.onclick = () => { st.persona = b.dataset.p; $$('[data-p]').forEach(x => x.classList.toggle('on', x === b)); });
+    const dif = () => {
+      const v = Number($('#tc').value), d = u && $('#tc').value !== '' ? Math.round((v - u.contado) * 100) / 100 : 0;
+      $('#tdif').innerHTML = d ? `<div class="note warn">${d < 0 ? 'Faltan' : 'Sobran'} ${money(Math.abs(d))} respecto a lo que dejó ${esc(u.persona)}.</div>` : '';
+      $('#tmw').style.display = d ? '' : 'none';
+    };
+    $('#tc').oninput = dif;
+    $('#ts').onclick = async () => {
+      if (!st.persona) return toast('Elige quién abre el turno', true);
+      if ($('#tc').value === '') return toast('Escribe el efectivo que recibes', true);
+      const v = Number($('#tc').value.replace(/[^\d.]/g, ''));
+      if (u && v !== u.contado && !$('#tm').value.trim()) return toast('Explica la diferencia', true);
+      const r = await send('turno_abrir', { persona: st.persona, contado: v, motivo: $('#tm').value }, `Turno de ${st.persona} abierto 🔓`);
+      if (r) { closeSheet(); S.ui.cajaMode = 'turno'; }
+    };
+  });
+}
+function openCerrarTurno() {
+  const t = C().turno; if (!t) return;
+  openSheet(`${sheetHead('Corte de caja', `Turno de ${esc(t.persona)} · desde ${esc(t.hora)}`)}
+    <div class="kv"><div><span>Efectivo inicial</span><b>${money(t.inicial)}</b></div><div><span>Cobros + ventas</span><b class="green">${money(t.cobros + t.ventas)}</b></div>
+    <div><span>Salidas de caja</span><b class="red">${money(t.salidas)}</b></div><div><span>Esperado en caja</span><b class="gold" style="font-size:20px">${money(t.esperado)}</b></div></div>
+    <p class="muted small" style="margin:-4px 0 12px">Informativo: transferencias ${money(t.transferencias)} · tarjeta ${money(t.tarjeta)}</p>
+    <label class="f"><span>¿Cuánto efectivo contaste?</span><input id="cc" inputmode="decimal" placeholder="${t.esperado}"></label>
+    <div id="cdif"></div>
+    <label class="f" id="cmw" style="display:none"><span>Motivo de la diferencia</span><input id="cm" placeholder="Explica por qué no cuadra"></label>
+    <p class="muted small" style="margin-bottom:12px">El efectivo que cuentes se queda en caja para el siguiente turno.</p>
+    <button class="btn" data-save id="cs">Hacer corte y cerrar turno</button>`, () => {
+    const dif = () => {
+      if ($('#cc').value === '') { $('#cdif').innerHTML = ''; $('#cmw').style.display = 'none'; return; }
+      const d = Math.round((Number($('#cc').value) - t.esperado) * 100) / 100;
+      $('#cdif').innerHTML = `<div class="total-row"><span class="muted">Diferencia</span>${difBadge(d)}</div>`;
+      $('#cmw').style.display = d ? '' : 'none';
+    };
+    $('#cc').oninput = dif;
+    $('#cs').onclick = async () => {
+      if ($('#cc').value === '') return toast('Escribe cuánto contaste', true);
+      const v = Number($('#cc').value.replace(/[^\d.]/g, ''));
+      if (Math.round((v - t.esperado) * 100) && !$('#cm').value.trim()) return toast('Explica la diferencia', true);
+      const r = await send('turno_cerrar', { id: t.id, contado: v, motivo: $('#cm').value });
+      if (r) openSheet(`${sheetHead('Corte registrado ✅', `Turno de ${esc(t.persona)}`)}
+        <div class="kv"><div><span>Esperado</span><b>${money(r.esperado)}</b></div><div><span>Contado</span><b>${money(r.contado)}</b></div></div>
+        <div class="total-row"><span class="muted">Resultado</span>${difBadge(r.diferencia)}</div>
+        <button class="btn" data-close>Listo</button>`);
+    };
+  });
+}
+function openSalida(pre) {
+  pre = pre || {};
+  const c = C(), owner = isOwner();
+  const cats = c.categorias.filter(x => owner || x !== 'Retiro del dueño');
+  const st = { categoria: pre.categoria || '', origen: 'Caja', prestamo: pre.prestamo || ((c.prestamos[0] || {}).nombre || '') };
+  const draw = () => {
+    const pr = c.prestamos.find(x => x.nombre === st.prestamo);
+    openSheet(`${sheetHead('Registrar salida de dinero', !c.turno ? '<span class="gold">No hay turno abierto: solo se pueden registrar salidas de cuenta / tarjeta</span>' : `Turno de ${esc(c.turno.persona)}`)}
+      <label class="f"><span>Categoría</span><div class="chips">${cats.map(x => `<button type="button" class="pill ${x === st.categoria ? 'on' : ''}" data-c="${esc(x)}">${esc(x)}</button>`).join('')}</div></label>
+      ${st.categoria === 'Pago de préstamo' ? `<label class="f"><span>Préstamo</span><select id="sp">${c.prestamos.map(x => `<option ${x.nombre === st.prestamo ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></label>
+        ${pr ? `<p class="muted small" style="margin:-6px 0 12px">Restan ${money(pr.restante)}${pr.abono ? ` · abono sugerido ${money(pr.abono)}` : ''}</p>` : ''}` : ''}
+      <label class="f"><span>Concepto</span><input id="sc" value="${esc(pre.concepto || (st.categoria === 'Pago de préstamo' ? 'Abono préstamo' : ''))}" placeholder="Ej. Garrafones de agua"></label>
+      <div class="f-row"><label class="f"><span>Monto</span><input id="sm" inputmode="decimal" value="${st.categoria === 'Pago de préstamo' && pr && pr.abono ? pr.abono : ''}"></label>
+      <label class="f"><span>Pagado a</span><input id="sa" placeholder="Proveedor o persona"></label></div>
+      ${owner ? `<label class="f"><span>¿De dónde salió el dinero?</span><div class="seg f" id="so">${c.origenes.map(x => `<button type="button" data-v="${esc(x)}" class="${x === st.origen ? 'on' : ''}">${esc(x)}</button>`).join('')}</div></label>` : '<p class="muted small" style="margin-bottom:12px">Sale del efectivo de la caja.</p>'}
+      <label class="f"><span>Nota (opcional)</span><input id="sn"></label>
+      <button class="btn" data-save id="ss">Registrar salida</button>`, () => {
+      const keep = () => { pre.concepto = $('#sc').value; };
+      $$('[data-c]').forEach(b => b.onclick = () => { keep(); if (b.dataset.c === 'Pago de préstamo' || st.categoria === 'Pago de préstamo') pre.concepto = ''; st.categoria = b.dataset.c; draw(); });
+      const sp = $('#sp'); if (sp) sp.onchange = () => { keep(); st.prestamo = sp.value; draw(); };
+      $$('#so button').forEach(b => b.onclick = () => { st.origen = b.dataset.v; $$('#so button').forEach(x => x.classList.toggle('on', x === b)); });
+      $('#ss').onclick = async () => {
+        if (!st.categoria) return toast('Elige la categoría', true);
+        const monto = Number($('#sm').value.replace(/[^\d.]/g, ''));
+        if (!(monto > 0)) return toast('Escribe el monto', true);
+        if (!$('#sc').value.trim()) return toast('Escribe el concepto', true);
+        const origen = owner ? st.origen : 'Caja';
+        if (origen === 'Caja' && !c.turno) return pedirTurno();
+        const r = await send('salida', { salida: { categoria: st.categoria, concepto: $('#sc').value, pagadoA: $('#sa').value, monto, origen, prestamo: st.categoria === 'Pago de préstamo' ? st.prestamo : '', notas: $('#sn').value } }, `Salida de ${money(monto)} registrada`);
+        if (r) closeSheet();
+      };
+    });
+  };
+  draw();
+}
+
 /* ===================== DEMO (datos de ejemplo, no toca el Sheet) ===================== */
-let DB = null;
+let DB = null, DB_CAJA = null;
 function demoInit() {
   const t = new Date(); const ymd = d => d.toISOString().slice(0, 10);
   const add = n => { const d = new Date(t); d.setDate(d.getDate() + n); return d; };
@@ -845,6 +1021,7 @@ function demoInit() {
   const productos = [['Agua', 15, 24, 9], ['Monster', 45, 12, 10], ['Sting', 12, 0, 0], ['Proteína RTD', 55, 10, 3]].map(([n, p, r, v], i) => ({ fila: 5 + i, nombre: n, precio: p, recibidas: r, vendidas: v, existencia: r - v, minimo: null, estado: r - v <= 0 ? 'Agotado' : r - v <= 5 ? 'Pocas piezas' : 'OK', acumulado: v * p }));
   const ventas = [{ fila: 5, fecha: ymd(t), socio: 'KG-001 - Ana López', producto: 'Agua', cantidad: 2, precio: 15, total: 30, metodo: 'Efectivo', notas: '' }];
   const meses = Array.from({ length: 12 }, (_, i) => { const d = new Date(t.getFullYear(), t.getMonth() - 11 + i, 1); const v = i < 8 ? 0 : 3000 + i * 900; return { mes: MES[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2), mensualidades: v, pagos: v / 400 | 0, ventas: i < 8 ? 0 : 150 * i, total: v + (i < 8 ? 0 : 150 * i) }; });
+  DB_CAJA = { turnos: [{ id: 'T-0', persona: 'Ariadna', fecha: ymd(add(-1)), hora: '15:00', inicial: 500, estado: 'Cerrado', contado: 1250, esperado: 1250, diferencia: 0, difApertura: 0, cobros: 700, ventas: 50, salidas: 0, motivo: '', transferencias: 400, tarjeta: 0, fechaCierre: ymd(add(-1)), horaCierre: '21:00' }], salidas: [{ fecha: ymd(add(-2)), hora: '12:10', categoria: 'Compras', concepto: 'Garrafones de agua', pagadoA: 'Purificadora', monto: 120, origen: 'Caja', prestamo: '', turno: 'T-0', registro: 'Ariadna', notas: '' }, { fecha: ymd(add(-1)), hora: '9:00', categoria: 'Servicios', concepto: 'Internet', pagadoA: 'Telmex', monto: 499, origen: 'Cuenta / tarjeta', prestamo: '', turno: '', registro: 'Dueño', notas: '' }], prestamos: [{ nombre: 'Préstamo $27,500', monto: 27500, previo: 1620, abono: 270, notas: '' }] };
   DB = { ok: true, hoy: ymd(t), hora: '10:00', gym: 'Kong Gym', horaGracias: '8:00 PM', periodos: Object.keys(tar.Individual), tarifas: tar, membresias: mem, planes: Object.keys(tar.Individual), socios: socs, asistencia: { mes: ymd(t).slice(0, 7), mesActual: ymd(t).slice(0, 7), umbral: 7, socios: asis, porDia }, pagos, ventas, avisoMinimo: 5, productos, panel: {} };
 }
 function demoPanel(rol) {
@@ -858,14 +1035,38 @@ function demoPanel(rol) {
   }
   return p;
 }
+
+function demoCaja(rol) {
+  const c = DB_CAJA, abierto = c.turnos.find(x => x.estado === 'Abierto');
+  const pres = c.prestamos.map(x => { const pagado = x.previo + c.salidas.filter(s => s.categoria === 'Pago de préstamo' && s.prestamo === x.nombre).reduce((a, s) => a + s.monto, 0); return Object.assign({}, x, { pagado, restante: x.monto - pagado }); });
+  const out = { personal: ['Jennifer', 'Ariadna', 'Dueño'], categorias: ['Compras', 'Servicios', 'Nómina', 'Obra y mejoras', 'Pago de préstamo', 'Retiro del dueño'], origenes: ['Caja', 'Cuenta / tarjeta'], prestamos: pres, turno: null };
+  if (abierto) {
+    const s = { cobros: 0, ventas: 0, salidas: 0, transferencias: 0, tarjeta: 0, movs: [] };
+    DB.pagos.filter(x => x.turno === abierto.id).forEach(x => { if (x.metodo === 'Efectivo') s.cobros += x.monto; else if (x.metodo === 'Transferencia') s.transferencias += x.monto; else s.tarjeta += x.monto; s.movs.push({ tipo: 'pago', texto: x.nombre + ' · ' + x.periodo, metodo: x.metodo, monto: x.monto }); });
+    DB.ventas.filter(x => x.turno === abierto.id).forEach(x => { if (x.metodo === 'Efectivo') s.ventas += x.total; else if (x.metodo === 'Transferencia') s.transferencias += x.total; else s.tarjeta += x.total; s.movs.push({ tipo: 'venta', texto: x.cantidad + ' × ' + x.producto, metodo: x.metodo, monto: x.total }); });
+    c.salidas.filter(x => x.turno === abierto.id && x.origen === 'Caja').forEach(x => { s.salidas += x.monto; s.movs.push({ tipo: 'salida', texto: x.categoria + ' · ' + x.concepto, metodo: 'Caja', monto: -x.monto }); });
+    out.turno = Object.assign({ id: abierto.id, persona: abierto.persona, fecha: abierto.fecha, hora: abierto.hora, inicial: abierto.inicial, esperado: abierto.inicial + s.cobros + s.ventas - s.salidas }, s);
+  }
+  const cerr = c.turnos.filter(x => x.estado === 'Cerrado');
+  const u = cerr[cerr.length - 1];
+  out.ultimoCierre = u ? { persona: u.persona, contado: u.contado, fecha: u.fechaCierre, hora: u.horaCierre } : null;
+  out.salidas = c.salidas.filter(x => rol === 'dueno' || (x.origen === 'Caja' && x.categoria !== 'Retiro del dueño'));
+  if (rol === 'dueno') {
+    const gm = {}; c.salidas.forEach(x => { const k = x.fecha.slice(0, 7); gm[k] = gm[k] || {}; gm[k][x.categoria] = (gm[k][x.categoria] || 0) + x.monto; });
+    out.gastosMes = gm; out.cortes = cerr.slice().reverse();
+  }
+  return out;
+}
 function demoApi(accion, x, pin) {
   return new Promise(res => setTimeout(() => {
     if (!DB) demoInit();
     const rol = pin === '000000' ? 'dueno' : pin === '111111' ? 'recepcion' : null;
     if (!rol) return res({ ok: false, error: 'pin', restantes: 7 });
-    const out = r => { const d = JSON.parse(JSON.stringify(DB)); d.rol = rol; d.panel = demoPanel(rol); r.datos = d; res(r); };
+    const full = () => { const d = JSON.parse(JSON.stringify(DB)); d.rol = rol; d.panel = demoPanel(rol); d.caja = demoCaja(rol); return d; };
+    const out = r => { r.datos = full(); res(r); };
+    const abierto = DB_CAJA.turnos.find(z => z.estado === 'Abierto');
     const now = new Date(), hhmm = `${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
-    if (accion === 'datos' || accion === 'login') { const d = JSON.parse(JSON.stringify(DB)); d.rol = rol; d.panel = demoPanel(rol); return res(d); }
+    if (accion === 'datos' || accion === 'login') return res(full());
     if (accion === 'asistencia') {
       const s = DB.socios.find(z => z.fila === x.fila); const a = DB.asistencia.socios[s.id];
       if (x.borrar) { a.hoy = ''; a.dias = Math.max(0, a.dias - 1); return out({ ok: true, borrado: true }); }
@@ -873,11 +1074,12 @@ function demoApi(accion, x, pin) {
       a.hoy = hhmm; a.dias++; a.aviso = ''; a.sinVenir = 0; DB.asistencia.porDia[now.getDate() - 1]++; return out({ ok: true, hora: hhmm });
     }
     if (accion === 'pago') {
-      const p = x.pago, s = DB.socios.find(z => z.fila === p.fila); const meses = { Mensual: 1, Trimestral: 3, Semestral: 6, Anual: 12 }[p.periodo];
+      const p = x.pago, s = DB.socios.find(z => z.fila === p.fila);
+      if (p.metodo === 'Efectivo' && !abierto) return res({ ok: false, error: 'sin_turno' }); const meses = { Mensual: 1, Trimestral: 3, Semestral: 6, Anual: 12 }[p.periodo];
       const base = s.dias !== null && s.dias >= 0 ? new Date(dmyToYmd(s.vence) + 'T12:00:00') : new Date(p.fecha + 'T12:00:00');
       if (meses) base.setMonth(base.getMonth() + meses); else if (p.periodo === 'Semana') base.setDate(base.getDate() + 7);
       const v = base.toISOString().slice(0, 10);
-      DB.pagos.push({ fila: 100 + DB.pagos.length, fecha: p.fecha, socio: s.id + ' - ' + s.nombre, id: s.id, nombre: s.nombre, periodo: p.periodo, monto: p.monto, metodo: p.metodo, recibio: ROL[rol], notas: p.notas, lista: DB.tarifas[s.membresia][p.periodo], inicia: p.fecha, vence: v });
+      DB.pagos.push({ fila: 100 + DB.pagos.length, fecha: p.fecha, socio: s.id + ' - ' + s.nombre, id: s.id, nombre: s.nombre, periodo: p.periodo, monto: p.monto, metodo: p.metodo, recibio: ROL[rol], notas: p.notas, lista: DB.tarifas[s.membresia][p.periodo], inicia: p.fecha, vence: v, turno: abierto ? abierto.id : '' });
       s.vence = v.split('-').reverse().join('/'); s.ultimoPago = p.fecha.split('-').reverse().join('/'); s.dias = Math.round((new Date(v) - new Date(DB.hoy)) / 864e5); s.estado = s.dias > 1 ? 'Al corriente' : 'Por vencer'; s.url = s.dias > 1 ? s.url : s.url; s.plan = p.periodo === 'Visita' ? s.plan : p.periodo;
       return out({ ok: true, vence: v });
     }
@@ -891,8 +1093,9 @@ function demoApi(accion, x, pin) {
     }
     if (accion === 'venta') {
       const v = x.venta, s = DB.socios.find(z => z.fila === v.fila), p = DB.productos.find(z => z.nombre === v.producto);
+      if (v.metodo === 'Efectivo' && !abierto) return res({ ok: false, error: 'sin_turno' });
       p.vendidas += v.cantidad; p.existencia -= v.cantidad; p.acumulado += p.precio * v.cantidad; p.estado = p.existencia <= 0 ? 'Agotado' : p.existencia <= 5 ? 'Pocas piezas' : 'OK';
-      DB.ventas.push({ fila: 6 + DB.ventas.length, fecha: DB.hoy, socio: s.id + ' - ' + s.nombre, producto: p.nombre, cantidad: v.cantidad, precio: p.precio, total: p.precio * v.cantidad, metodo: v.metodo, notas: '' });
+      DB.ventas.push({ fila: 6 + DB.ventas.length, fecha: DB.hoy, socio: s.id + ' - ' + s.nombre, producto: p.nombre, cantidad: v.cantidad, precio: p.precio, total: p.precio * v.cantidad, metodo: v.metodo, notas: '', turno: abierto ? abierto.id : '' });
       return out({ ok: true, total: p.precio * v.cantidad, aviso: p.existencia < 0 ? '⚠ Sin piezas suficientes: captura lo recibido en Inventario' : '' });
     }
     if (accion === 'recibir') { const p = DB.productos.find(z => z.nombre === x.producto); p.recibidas += x.piezas; p.existencia += x.piezas; p.estado = p.existencia <= 0 ? 'Agotado' : p.existencia <= 5 ? 'Pocas piezas' : 'OK'; return out({ ok: true }); }
@@ -902,6 +1105,26 @@ function demoApi(accion, x, pin) {
       if (b.fila) { const p = DB.productos.find(z => z.fila === b.fila); p.precio = b.precio; p.minimo = b.minimo === '' ? null : b.minimo; return out({ ok: true }); }
       if (DB.productos.some(z => norm(z.nombre) === norm(b.nombre))) return res({ ok: false, error: 'duplicado' });
       DB.productos.push({ fila: 5 + DB.productos.length, nombre: b.nombre, precio: b.precio, recibidas: b.piezas, vendidas: 0, existencia: b.piezas, minimo: b.minimo === '' ? null : b.minimo, estado: b.piezas <= 0 ? 'Agotado' : b.piezas <= 5 ? 'Pocas piezas' : 'OK', acumulado: 0 });
+      return out({ ok: true });
+    }
+    if (accion === 'turno_abrir') {
+      if (abierto) return res({ ok: false, error: 'turno_abierto' });
+      const u = DB_CAJA.turnos.filter(z => z.estado === 'Cerrado').pop(), dejo = u ? u.contado : x.contado;
+      DB_CAJA.turnos.push({ id: 'T-' + Date.now(), persona: x.persona, fecha: DB.hoy, hora: hhmm, inicial: x.contado, difApertura: x.contado - dejo, estado: 'Abierto', motivo: x.motivo || '' });
+      return out({ ok: true });
+    }
+    if (accion === 'turno_cerrar') {
+      if (!abierto) return res({ ok: false, error: 'sin_turno' });
+      const t = demoCaja(rol).turno, dif = Math.round((x.contado - t.esperado) * 100) / 100;
+      if (dif && !x.motivo) return res({ ok: false, error: 'falta', campo: 'motivo' });
+      Object.assign(abierto, { estado: 'Cerrado', contado: x.contado, esperado: t.esperado, diferencia: dif, motivo: [abierto.motivo, x.motivo].filter(Boolean).join(' · '), cobros: t.cobros, ventas: t.ventas, salidas: t.salidas, transferencias: t.transferencias, tarjeta: t.tarjeta, fechaCierre: DB.hoy, horaCierre: hhmm });
+      return out({ ok: true, esperado: t.esperado, contado: x.contado, diferencia: dif });
+    }
+    if (accion === 'salida') {
+      const sl = x.salida, origen = rol === 'dueno' ? sl.origen : 'Caja';
+      if (sl.categoria === 'Retiro del dueño' && rol !== 'dueno') return res({ ok: false, error: 'permiso' });
+      if (origen === 'Caja' && !abierto) return res({ ok: false, error: 'sin_turno' });
+      DB_CAJA.salidas.push({ fecha: DB.hoy, hora: hhmm, categoria: sl.categoria, concepto: sl.concepto, pagadoA: sl.pagadoA, monto: sl.monto, origen, prestamo: sl.prestamo, turno: origen === 'Caja' ? abierto.id : '', registro: rol === 'dueno' ? 'Dueño' : abierto.persona, notas: sl.notas });
       return out({ ok: true });
     }
     res({ ok: false, error: 'accion' });
