@@ -751,8 +751,7 @@ function renderTienda(m) {
     const p = S.d.productos.find(x => x.nombre === V.producto);
     const total = p ? p.precio * V.cant : 0;
     const ventasHoy = S.d.ventas.filter(v => v.fecha === hoy()).sort((a, b) => b.fila - a.fila);
-    h += `<p class="muted small" style="margin-bottom:10px">Venta solo a socios.</p>
-      <label class="f"><span>Socio</span>${pickBtn(V.socio)}</label>
+    h += `<label class="f"><span>Socio (opcional)</span>${V.socio ? pickBtn(V.socio) : '<button class="pick empty-pick" id="pick"><div class="av">+</div><span>Sin socio · toca para ligar la venta a alguien</span><span class="ch">Elegir</span></button>'}${V.socio ? '<button class="small muted" id="nosoc" style="margin-top:6px">Quitar socio</button>' : ''}</label>
       <label class="f"><span>Producto</span></label>
       <div class="prods">${S.d.productos.length ? S.d.productos.map(x => `<button class="prod ${x.nombre === V.producto ? 'on' : ''} ${x.existencia <= 0 ? 'out' : ''}" data-p="${esc(x.nombre)}"><b>${esc(x.nombre)}</b><span class="money">${money(x.precio)}</span><small>${x.existencia <= 0 ? 'Agotado' : x.existencia + ' en existencia'}</small></button>`).join('') : '<div class="empty">Agrega productos en Inventario</div>'}</div>
       <div class="f-row"><label class="f"><span>Cantidad</span><div class="stepper"><button id="menos" aria-label="Menos">−</button><b>${V.cant}</b><button id="mas" aria-label="Más">+</button></div></label></div>
@@ -761,7 +760,7 @@ function renderTienda(m) {
       <div class="total-row"><span class="muted">Total</span><span class="big" style="font-size:30px">${money(total)}</span></div>
       <button class="btn" id="vsave" ${S.busy ? 'disabled' : ''}>Registrar venta</button>
       <h2>Ventas de hoy <span class="n">${ventasHoy.length}</span></h2>
-      <div class="card flush">${ventasHoy.length ? ventasHoy.map(v => `<div class="li"><div class="av" style="font-family:inherit">🥤</div><div class="mid"><div class="t">${v.cantidad} × ${esc(v.producto)}</div><div class="s">${esc(v.socio.replace(/^KG-\d+ - /, ''))} · ${esc(v.metodo)}</div></div><div class="end"><span class="money">${money(v.total)}</span></div></div>`).join('') + `<div class="li"><div class="mid"><b>Total del día</b></div><div class="end"><span class="money">${money(ventasHoy.reduce((a, v) => a + v.total, 0))}</span></div></div>` : '<div class="empty">Aún no hay ventas hoy</div>'}</div>`;
+      <div class="card flush">${ventasHoy.length ? ventasHoy.map(v => `<div class="li"><div class="av" style="font-family:inherit">🥤</div><div class="mid"><div class="t">${v.cantidad} × ${esc(v.producto)}</div><div class="s">${esc(v.socio ? v.socio.replace(/^KG-\d+ - /, '') : 'Sin socio')} · ${esc(v.metodo)}</div></div><div class="end"><span class="money">${money(v.total)}</span></div></div>`).join('') + `<div class="li"><div class="mid"><b>Total del día</b></div><div class="end"><span class="money">${money(ventasHoy.reduce((a, v) => a + v.total, 0))}</span></div></div>` : '<div class="empty">Aún no hay ventas hoy</div>'}</div>`;
   } else {
     const prods = S.d.productos;
     h += `${isOwner() ? '<button class="btn" id="np">+ Nuevo producto</button>' : ''}
@@ -775,16 +774,16 @@ function renderTienda(m) {
   $$('.seg:not(#vmet) button', m).forEach(b => b.onclick = () => { S.ui.tiendaMode = b.dataset.m; renderTienda(m); });
   if (mode === 'vender') {
     $('#pick').onclick = () => pickSocio(s => { V.socio = s; closeSheet(); renderTienda(m); });
+    const ns = $('#nosoc'); if (ns) ns.onclick = () => { V.socio = null; renderTienda(m); };
     $$('.prod', m).forEach(b => b.onclick = () => { V.producto = b.dataset.p; renderTienda(m); });
     $('#menos').onclick = () => { V.cant = Math.max(1, V.cant - 1); renderTienda(m); };
     $('#mas').onclick = () => { V.cant = Math.min(99, V.cant + 1); renderTienda(m); };
     $$('#vmet button').forEach(b => b.onclick = () => { V.metodo = b.dataset.v; renderTienda(m); });
     $('#vsave').onclick = async () => {
-      if (!V.socio) return toast('Elige al socio', true);
       if (!V.producto) return toast('Elige el producto', true);
       if (V.metodo === 'Efectivo' && cajaActiva() && !C().turno) return pedirTurno();
       $('#vsave').disabled = true; $('#vsave').textContent = 'Guardando…';
-      const r = await send('venta', { venta: { fila: V.socio.fila, id: V.socio.id, producto: V.producto, cantidad: V.cant, metodo: V.metodo } }, r => `Venta registrada · ${money(r.total)} ✅`);
+      const r = await send('venta', { venta: { fila: V.socio ? V.socio.fila : 0, id: V.socio ? V.socio.id : '', producto: V.producto, cantidad: V.cant, metodo: V.metodo } }, r => `Venta registrada · ${money(r.total)} ✅`);
       if (r) { S.ui.venta = { socio: null, producto: '', cant: 1, metodo: 'Efectivo' }; render(); if (r.aviso) setTimeout(() => toast(r.aviso.replace('⚠ ', ''), true), 2700); }
       else renderTienda(m);
     };
@@ -1097,7 +1096,7 @@ function demoApi(accion, x, pin) {
       const v = x.venta, s = DB.socios.find(z => z.fila === v.fila), p = DB.productos.find(z => z.nombre === v.producto);
       if (v.metodo === 'Efectivo' && !abierto) return res({ ok: false, error: 'sin_turno' });
       p.vendidas += v.cantidad; p.existencia -= v.cantidad; p.acumulado += p.precio * v.cantidad; p.estado = p.existencia <= 0 ? 'Agotado' : p.existencia <= 5 ? 'Pocas piezas' : 'OK';
-      DB.ventas.push({ fila: 6 + DB.ventas.length, fecha: DB.hoy, socio: s.id + ' - ' + s.nombre, producto: p.nombre, cantidad: v.cantidad, precio: p.precio, total: p.precio * v.cantidad, metodo: v.metodo, notas: '', turno: abierto ? abierto.id : '' });
+      DB.ventas.push({ fila: 6 + DB.ventas.length, fecha: DB.hoy, socio: s ? s.id + ' - ' + s.nombre : '', producto: p.nombre, cantidad: v.cantidad, precio: p.precio, total: p.precio * v.cantidad, metodo: v.metodo, notas: '', turno: abierto ? abierto.id : '' });
       return out({ ok: true, total: p.precio * v.cantidad, aviso: p.existencia < 0 ? '⚠ Sin piezas suficientes: captura lo recibido en Inventario' : '' });
     }
     if (accion === 'recibir') { const p = DB.productos.find(z => z.nombre === x.producto); p.recibidas += x.piezas; p.existencia += x.piezas; p.estado = p.existencia <= 0 ? 'Agotado' : p.existencia <= 5 ? 'Pocas piezas' : 'OK'; return out({ ok: true }); }

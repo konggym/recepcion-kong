@@ -416,8 +416,9 @@ function adm_asegurarMes_(ss, sh, tz, ahora) {
 function adm_venta_(rol, v) {
   const ss = adm_ss_();
   const tz = ss.getSpreadsheetTimeZone();
-  const socio = adm_socioPorFila_(ss, v.fila, v.id);
-  if (!socio) return { ok: false, error: 'socio' };
+  // El socio es opcional: si viene, se valida; si no, la venta queda sin socio
+  const socio = v.fila ? adm_socioPorFila_(ss, v.fila, v.id) : null;
+  if (v.fila && !socio) return { ok: false, error: 'socio' };
   const prod = adm_producto_(ss, v.producto);
   if (!prod) return { ok: false, error: 'falta', campo: 'producto' };
   const cant = Math.floor(Number(v.cantidad));
@@ -429,7 +430,7 @@ function adm_venta_(rol, v) {
   const fila = adm_ultimaFila_(sh, ADM.PRIMERA_FILA_VENTAS, ADM.ULTIMA_FILA_VENTAS, [1, 4]) + 1;
   if (fila > ADM.ULTIMA_FILA_VENTAS) return { ok: false, error: 'lleno' };
   const hoy = adm_fecha_(Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd'), tz);
-  sh.getRange(fila, 1, 1, 4).setValues([[hoy, socio.etiqueta, prod.nombre, cant]]);
+  sh.getRange(fila, 1, 1, 4).setValues([[hoy, socio ? socio.etiqueta : '', prod.nombre, cant]]);
   sh.getRange(fila, 7, 1, 2).setValues([[v.metodo, String(v.notas || '').trim()]]);
   if (turno) sh.getRange(fila, ADM.COL_TURNO_VENTAS).setValue(turno.id);
   SpreadsheetApp.flush();
