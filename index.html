@@ -228,6 +228,98 @@ body:not(.in){background:var(--leaves) right -90px top -60px/115% auto no-repeat
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
+/* ===== Fondo vivo: concreto + follaje que se mece + luz de tragaluz ===== */
+html{background-color:var(--bg);background-image:var(--noise),repeating-linear-gradient(180deg,transparent 0 95px,rgba(60,55,48,.045) 95px 96px),radial-gradient(circle at 24px 24px,rgba(60,55,48,.07) 2.2px,transparent 2.8px);background-size:auto,auto,96px 96px}
+html,body{background-color:transparent}
+html{background-color:var(--bg)}
+#bgv{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+#app,#modal,#toast{position:relative;z-index:1}
+#modal{position:fixed;z-index:20}#toast{position:fixed;z-index:40}
+.pl{position:absolute;filter:blur(9px);opacity:.3;will-change:transform;animation:sway 16s ease-in-out infinite alternate}
+.pl svg{display:block;width:100%;height:100%;fill:var(--foliage)}
+@keyframes sway{from{transform:rotate(calc(var(--r,0deg) - 3.5deg))}to{transform:rotate(calc(var(--r,0deg) + 3.5deg))}}
+.beam{position:absolute;top:-30vh;width:22vw;min-width:160px;height:170vh;background:linear-gradient(90deg,transparent,var(--beam),transparent);filter:blur(28px);transform:rotate(24deg);animation:drift 28s ease-in-out infinite alternate;will-change:transform}
+@keyframes drift{from{translate:-7vw 0}to{translate:7vw 0}}
+:root{--foliage:#2c3a22;--beam:rgba(255,246,222,.55)}
+@media (prefers-color-scheme:dark){:root{--foliage:#3e5230;--beam:rgba(255,240,200,.06)}.pl{opacity:.55}}
+/* Tarjetas semitransparentes para intuir el follaje */
+:root{--surface:rgba(252,251,249,.78)}
+@media (prefers-color-scheme:dark){:root{--surface:rgba(34,33,31,.78)}}
+.hero{background:var(--noise),repeating-linear-gradient(180deg,transparent 0 63px,rgba(0,0,0,.04) 63px 64px),radial-gradient(circle at 18px 18px,rgba(0,0,0,.07) 2px,transparent 2.6px) 0 0/64px 64px,linear-gradient(160deg,var(--concrete),var(--concrete2));opacity:.96}
+body:not(.in){background:none}
+
+/* ===== Animación de entrada ===== */
+#intro{position:fixed;inset:0;z-index:100;display:grid;place-items:center;overflow:hidden;cursor:pointer;
+  background:radial-gradient(60% 50% at 50% 50%,#1d2a17 0%,#0b1009 70%,#060805 100%);transition:opacity .6s ease,filter .6s ease}
+#intro.out{opacity:0;filter:blur(12px);pointer-events:none}
+#intro .lf{position:absolute;left:50%;top:50%;width:var(--w,120px);height:calc(var(--w,120px) * 2.2);margin:calc(var(--w,120px) * -1.1) 0 0 calc(var(--w,120px) * -.5);opacity:0;
+  animation:fly var(--t,2.4s) cubic-bezier(.55,.05,.7,.4) var(--d,0s) forwards}
+#intro .lf svg{width:100%;height:100%;fill:var(--c,#2f4a24)}
+@keyframes fly{0%{transform:rotate(var(--a)) translateY(0) scale(.08);opacity:0;filter:blur(3px)}
+  15%{opacity:.95}70%{opacity:.95;filter:blur(1px)}
+  100%{transform:rotate(var(--a)) translateY(-78vmax) scale(3.2) rotate(var(--s,20deg));opacity:0;filter:blur(10px)}}
+#intro .brand-i{position:relative;text-align:center;color:#f3f1ec}
+#intro .brand-i .lg{width:112px;height:112px;border-radius:50%;overflow:hidden;margin:0 auto;box-shadow:0 20px 60px rgba(0,0,0,.5);
+  animation:focusin 1.5s cubic-bezier(.2,.8,.2,1) .35s both}
+#intro .brand-i .lg img{width:100%;height:100%;object-fit:cover;display:block;filter:grayscale(1) contrast(1.05)}
+@keyframes focusin{from{opacity:0;transform:scale(.55);filter:blur(22px)}to{opacity:1;transform:none;filter:blur(0)}}
+#intro .brand-i b{display:block;font-size:30px;font-weight:700;letter-spacing:-.03em;margin-top:18px;animation:rise .8s ease 1.5s both}
+#intro .brand-i span{display:block;font-size:15px;color:rgba(243,241,236,.62);margin-top:4px;letter-spacing:.02em;animation:rise .8s ease 1.9s both}
+@keyframes rise{from{opacity:0;transform:translateY(8px);filter:blur(6px)}to{opacity:1;transform:none;filter:blur(0)}}
+#intro .skip{position:absolute;bottom:calc(24px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:13px;color:rgba(243,241,236,.4);animation:rise .6s ease .8s both}
+
+/* ===== Medidores (tacómetro 240°) ===== */
+.gauges{display:flex;gap:10px;flex-wrap:wrap}
+.gauge{flex:1;min-width:130px;display:flex;flex-direction:column;align-items:center}
+.gauge svg{width:100%;max-width:170px;height:auto;overflow:visible}
+.gauge .trk{stroke:var(--fill);stroke-width:8;fill:none;stroke-linecap:round}
+.gauge .arc{stroke:var(--tint);stroke-width:8;fill:none;stroke-linecap:round}
+.gauge.full .arc{stroke:var(--wood)}
+.gauge .tk{stroke:var(--label3);stroke-width:1.2}
+.gauge .ndl{stroke:var(--label);stroke-width:2.2;stroke-linecap:round}
+.gauge .hub{fill:var(--label)}
+.gauge .num{font-size:19px;font-weight:700;fill:var(--label);text-anchor:middle;letter-spacing:-.02em;font-family:var(--font)}
+.gauge small{font-size:13px;color:var(--label2);margin-top:-4px;text-align:center}
+
+/* ===== Computadora ===== */
+.side-brand{display:none}
+@media (hover:hover){
+  .btn:hover{filter:brightness(1.06)} .btn.ghost:hover,.btn.danger:hover{filter:brightness(.97)}
+  button.li:hover,a.li:hover,.li.tap:hover,.pick:hover,.prod:hover,.qa:hover,.stat[href]:hover{background:var(--fill2)}
+  .pill:hover:not(.on),.seg button:hover:not(.on),.x:hover{background:var(--fill2)}
+  .kp button:hover{background:var(--fill)}
+  .tab:hover{color:var(--label2)}
+}
+@media (min-width:900px){
+  body{font-size:16px}
+  .tabs{top:0;bottom:0;right:auto;width:244px;flex-direction:column;justify-content:flex-start;padding:calc(18px + env(safe-area-inset-top)) 12px 18px;border-top:0;border-right:.5px solid var(--sep)}
+  .tabs-in{flex-direction:column;gap:2px;max-width:none}
+  .side-brand{display:flex;align-items:center;gap:10px;padding:4px 10px 22px}
+  .side-brand .logo{width:36px;height:36px}
+  .tab{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;font-size:15px;font-weight:500;color:var(--label2);min-height:42px;padding:0 12px;border-radius:10px}
+  .tab .ti svg.i{width:21px;height:21px}
+  .tab.on{background:var(--tint-soft);color:var(--tint)}
+  .tab .dot{position:static;margin-left:auto}
+  #app{max-width:none;margin:0 0 0 244px;padding:0 40px 48px}
+  .top{margin:0 -40px;padding:14px 40px}
+  .top .brand{visibility:hidden}
+  main{max-width:1080px;margin:0 auto;padding-top:18px}
+  h1{font-size:34px}
+  .cols{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:start}
+  .cols>.col>h2:first-child{margin-top:0}
+  .cols>.col>.hero:first-child{margin-top:0}
+  .qa-grid{gap:10px}
+  .prods{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+  .modal{align-items:center;padding:24px}
+  .sheet{max-width:560px;border-radius:20px;padding:22px 22px 24px;animation:pop .22s ease}
+  .sheet::before{display:none}
+  .login{padding-top:12vh}
+  body:not(.in) .tabs{display:none}
+}
+@media (min-width:1300px){main{max-width:1180px}}
+@media (min-width:900px){.pl{scale:1.5}.beam{width:16vw}}
+@media (prefers-reduced-motion:reduce){.pl,.beam{animation:none}#intro{display:none}}
+
 </style>
 </head>
 <body>
@@ -273,6 +365,103 @@ const ICONS = {
   check: 'M20 6 9 17l-5-5'
 };
 const ic = (n, cls) => `<svg class="i${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n] || ''}"/></svg>`;
+
+/* ===================== FONDO VIVO ===================== */
+function plantSVG(kind, seed) {
+  let r = seed || 1; const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  const P = [];
+  if (kind === 'palm' || kind === 'fern') {
+    // tallo curvo con foliolos a ambos lados
+    const n = kind === 'palm' ? 18 : 26, len = kind === 'palm' ? 86 : 52, wid = kind === 'palm' ? 7 : 5;
+    P.push('<path d="M100 200 C 96 140, 92 80, 104 12" stroke="currentColor" fill="none" stroke-width="3"/>');
+    for (let i = 1; i < n; i++) {
+      const t = i / n, y = 200 - t * 186, x = 100 + Math.sin(t * 2.4) * 4 - t * 2;
+      const L = len * (1 - t * 0.75) * (0.85 + rnd() * 0.3);
+      [-1, 1].forEach(s => {
+        const a = (s * (58 - t * 18) - 8) * Math.PI / 180, ex = x + Math.sin(a) * L, ey = y - Math.cos(a) * L;
+        const mx = (x + ex) / 2 + s * wid * 0.4, my = (y + ey) / 2 + wid;
+        P.push(`<path d="M${x.toFixed(1)} ${y.toFixed(1)} Q${(mx + s * wid).toFixed(1)} ${(my - wid).toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)} Q${(mx - s * wid * .3).toFixed(1)} ${(my + wid * .4).toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)}z"/>`);
+      });
+    }
+  } else {
+    // hoja ancha (tipo monstera / plátano)
+    P.push('<path d="M100 198 C 30 170, 8 90, 60 30 C 80 8, 120 8, 140 30 C 192 90, 170 170, 100 198z"/>');
+    for (let i = 0; i < 5; i++) { const y = 60 + i * 26, s = i % 2 ? 1 : -1; P.push(`<path d="M100 ${y} L${100 + s * (60 - i * 4)} ${y - 18} L${100 + s * (62 - i * 4)} ${y - 10}z" fill="var(--bg)" opacity=".9"/>`); }
+  }
+  return `<svg viewBox="0 0 200 200" preserveAspectRatio="xMidYMax meet" style="color:var(--foliage)">${P.join('')}</svg>`;
+}
+function buildBackground() {
+  if ($('#bgv')) return;
+  const L = [ // [tipo, semilla, css de posición, rotación base, duración]
+    ['palm', 3, 'left:-120px;top:-60px;width:420px;height:420px;transform-origin:0 0', '128deg', 15],
+    ['broad', 5, 'right:-90px;top:-40px;width:300px;height:300px;transform-origin:100% 0', '200deg', 17],
+    ['fern', 7, 'left:-150px;bottom:-60px;width:340px;height:380px;transform-origin:0 100%', '28deg', 13],
+    ['palm', 11, 'right:-230px;bottom:-120px;width:460px;height:460px;transform-origin:100% 100%', '-36deg', 19],
+    ['broad', 13, 'right:-120px;top:42%;width:260px;height:260px;transform-origin:100% 50%', '-100deg', 16],
+    ['fern', 17, 'left:-110px;top:38%;width:280px;height:320px;transform-origin:0 50%', '96deg', 18]
+  ];
+  const d = document.createElement('div'); d.id = 'bgv'; d.setAttribute('aria-hidden', 'true');
+  d.innerHTML = '<div class="beam" style="left:18%"></div><div class="beam" style="left:58%;animation-duration:36s;animation-delay:-12s;opacity:.7"></div>' +
+    L.map(([k, s, pos, rot, dur], i) => `<div class="pl" style="${pos};--r:${rot};animation-duration:${dur}s;animation-delay:-${i * 3}s">${plantSVG(k, s)}</div>`).join('');
+  document.body.prepend(d);
+}
+
+/* ===================== ANIMACIÓN DE ENTRADA ===================== */
+function playIntro() {
+  let seen = false; try { seen = sessionStorage.getItem('kga_intro') === '1'; } catch (e) {}
+  if (seen || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  try { sessionStorage.setItem('kga_intro', '1'); } catch (e) {}
+  const leafSVG = '<svg viewBox="0 0 50 110"><path d="M25 108 C 4 88, 0 46, 25 2 C 50 46, 46 88, 25 108z"/></svg>';
+  const greens = ['#2f4a24', '#3d5c2c', '#26391d', '#4a6b34', '#1f2e18'];
+  let leaves = '';
+  for (let i = 0; i < 26; i++) {
+    const a = Math.round(Math.random() * 360), dl = (Math.random() * 1.6).toFixed(2), t = (1.6 + Math.random() * 1.1).toFixed(2), w = Math.round(60 + Math.random() * 120);
+    leaves += `<div class="lf" style="--a:${a}deg;--d:${dl}s;--t:${t}s;--w:${w}px;--s:${Math.round(Math.random() * 80 - 40)}deg;--c:${greens[i % greens.length]}">${leafSVG}</div>`;
+  }
+  const el = document.createElement('div'); el.id = 'intro'; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = leaves + `<div class="brand-i"><div class="lg"><img src="${LOGO_SMALL}" alt=""></div><b>Kong Gym</b><span>Administración</span></div><div class="skip">Toca para continuar</div>`;
+  document.body.appendChild(el);
+  const end = () => { if (el.classList.contains('out')) return; el.classList.add('out'); setTimeout(() => el.remove(), 650); };
+  el.addEventListener('click', end); setTimeout(end, 3100);
+}
+
+/* ===================== MEDIDORES (TACÓMETRO 240°) ===================== */
+const G_R = 44, G_LEN = 2 * Math.PI * G_R * (240 / 360);
+function gaugeArc() { // de -120° a +120°, centro (60,60)
+  const p = d => { const a = (d - 90) * Math.PI / 180; return [60 + G_R * Math.cos(a), 60 + G_R * Math.sin(a)]; };
+  const [x1, y1] = p(-120), [x2, y2] = p(120);
+  return `M${x1.toFixed(2)} ${y1.toFixed(2)} A${G_R} ${G_R} 0 1 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`;
+}
+function gauge(frac, num, label, fmt) {
+  frac = Math.max(0, Math.min(1, frac || 0));
+  let ticks = '';
+  for (let i = 0; i <= 12; i++) {
+    const a = (-120 + i * 20 - 90) * Math.PI / 180, r1 = G_R - 9, r2 = G_R - (i % 3 ? 12 : 15);
+    ticks += `<line class="tk" x1="${(60 + r1 * Math.cos(a)).toFixed(2)}" y1="${(60 + r1 * Math.sin(a)).toFixed(2)}" x2="${(60 + r2 * Math.cos(a)).toFixed(2)}" y2="${(60 + r2 * Math.sin(a)).toFixed(2)}"/>`;
+  }
+  const arc = gaugeArc();
+  return `<div class="gauge${frac >= 1 ? ' full' : ''}" data-f="${frac}" data-n="${num}" data-fmt="${fmt || 'pct'}">
+    <svg viewBox="0 0 120 100"><path class="trk" d="${arc}"/><path class="arc" d="${arc}" stroke-dasharray="${G_LEN.toFixed(2)}" stroke-dashoffset="${G_LEN.toFixed(2)}"/>${ticks}
+    <line class="ndl" x1="60" y1="60" x2="60" y2="${60 - G_R + 16}" transform="rotate(-120 60 60)"/><circle class="hub" cx="60" cy="60" r="3.2"/>
+    <text class="num" x="60" y="94">0</text></svg><small>${esc(label)}</small></div>`;
+}
+function animateGauges(root) {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $$('.gauge', root).forEach((g, idx) => {
+    const f = Number(g.dataset.f), n = Number(g.dataset.n), fmt = g.dataset.fmt;
+    const arc = $('.arc', g), ndl = $('.ndl', g), num = $('.num', g);
+    const show = e => {
+      arc.setAttribute('stroke-dashoffset', (G_LEN * (1 - f * e)).toFixed(2));
+      ndl.setAttribute('transform', `rotate(${(-120 + 240 * f * e).toFixed(2)} 60 60)`);
+      const v = n * e; num.textContent = fmt === 'money' ? money(v) : fmt === 'int' ? Math.round(v) : Math.round(v) + '%';
+    };
+    if (reduce) return show(1);
+    const t0 = performance.now() + idx * 70;
+    const step = t => { const k = Math.min(1, Math.max(0, (t - t0) / 1200)), e = 1 - Math.pow(1 - k, 3); show(e); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#modal:not(.hidden)')) closeSheet(); });
 
 /* ===================== ESTADO ===================== */
 const K = DEMO ? 'kgad_' : 'kga_';
@@ -436,7 +625,7 @@ function render() {
   const t = tab();
   if (!$('#main')) {
     $('#app').innerHTML = `<header class="top" id="top"></header><main id="main"></main>
-      <nav class="tabs"><div class="tabs-in" id="tabs"></div></nav>`;
+      <nav class="tabs"><div class="side-brand"><div class="logo"><img src="${LOGO_SMALL}" alt=""></div><div><div class="bt">Kong Gym</div><div class="bs">${esc(ROL[S.rol] || '')}</div></div></div><div class="tabs-in" id="tabs"></div></nav>`;
   }
   renderTop();
   const pc = pendientesCobro();
@@ -519,12 +708,14 @@ function renderInicio(m) {
   if (p.porAgotarse) pend.push(['box', `${p.porAgotarse} producto${p.porAgotarse > 1 ? 's' : ''} agotado${p.porAgotarse > 1 ? 's' : ''} o por agotarse`, '#tienda', 'inv']);
   if (sinVenir) pend.push(['clock', `${sinVenir} socio${sinVenir > 1 ? 's llevan' : ' lleva'} más de ${d.asistencia.umbral} días sin venir`, '#asistencia']);
   if (p.sinPagos) pend.push(['note', `${p.sinPagos} registrado${p.sinPagos > 1 ? 's' : ''} sin ningún pago`, '#socios', 'sinpagos']);
-  h += `<h2>Pendientes</h2><div class="card flush">${pend.length ? pend.map(([i, t, href, x]) => `<a class="li tap" href="${href}" ${x ? `data-x="${x}"` : ''} style="text-decoration:none"><div class="av t1">${ic(i)}</div><div class="mid"><div class="t" style="white-space:normal">${t}</div></div>${ic('chev', 'chev')}</a>`).join('') : '<div class="empty">Todo al día</div>'}</div>`;
+  h += `<h2>Pendientes</h2><div class="card flush" id="pendc">${pend.length ? pend.map(([i, t, href, x]) => `<a class="li tap" href="${href}" ${x ? `data-x="${x}"` : ''} style="text-decoration:none"><div class="av t1">${ic(i)}</div><div class="mid"><div class="t" style="white-space:normal">${t}</div></div>${ic('chev', 'chev')}</a>`).join('') : '<div class="empty">Todo al día</div>'}</div>`;
 
+  h = `<div class="cols"><div class="col">${h}</div><div class="col">`;
   if (isOwner() && p.meses) {
     const max = Math.max(1, ...p.meses.map(x => x.total));
     const metMax = Math.max(1, ...p.metodos.map(x => x.monto));
     h += `<h2>Ingresos</h2>
+      <div class="card"><div class="gauges" style="margin-bottom:6px">${gauge(p.renovacion || 0, Math.round((p.renovacion || 0) * 100), 'Renovación')}${gauge(p.activos ? Math.min(1, p.activos / Math.max(1, p.activos + p.vencidos)) : 0, p.activos, 'Activos de ' + (p.activos + p.vencidos), 'int')}</div></div>
       <div class="card">
         <div class="eyebrow">${MESL[now.getMonth()]}</div>
         <div class="big" style="margin-top:4px">${money(p.ingresoMes)}</div>
@@ -532,14 +723,15 @@ function renderInicio(m) {
         ${p.metodos.map(x => `<div class="mbar"><span>${esc(x.metodo)}</span><div class="tr"><i style="width:${Math.round(x.monto / metMax * 100)}%"></i></div><b class="gold">${money(x.monto)}</b></div>`).join('')}
       </div>
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:baseline"><b>Últimos 12 meses</b><span class="muted small">Renovación ${Math.round((p.renovacion || 0) * 100)}%</span></div>
+        <b>Últimos 12 meses</b>
         <div class="bars">${p.meses.map((x, i) => `<div class="bc" title="${esc(x.mes)}: ${money(x.total)}"><i class="${x.total ? (i === p.meses.length - 1 ? 'cur' : '') : 'zero'}" style="height:${Math.max(2, Math.round(x.total / max * 92))}px"></i><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div>
       </div>`;
   }
   h += `<h2>Socios activos por membresía</h2><div class="stats">${Object.entries(p.porMembresia).map(([k, v]) => `<div class="stat"><b>${v}</b><span>${esc(k)}</span></div>`).join('')}</div>
     <button class="btn danger" id="out" style="margin-top:22px">Cerrar sesión</button>
-    <p class="muted small center" style="text-align:center;margin-top:12px">Datos del Sheet KongGym_Control_de_Pagos</p>`;
+    <p class="muted small center" style="text-align:center;margin-top:12px">Datos del Sheet KongGym_Control_de_Pagos</p></div></div>`;
   m.innerHTML = h;
+  animateGauges(m);
   $$('[data-qa]', m).forEach(b => b.onclick = () => {
     const a = b.dataset.qa;
     if (a === 'entrada') location.hash = '#asistencia';
@@ -931,6 +1123,7 @@ function renderCaja(m) {
     h += metricasHtml();
   }
   m.innerHTML = h;
+  animateGauges(m);
   $$('.seg button', m).forEach(b => b.onclick = () => { S.ui.cajaMode = b.dataset.m; renderCaja(m); });
   const on = (id, fn) => { const e = $('#' + id, m); if (e) e.onclick = fn; };
   on('abrir', () => openAbrirTurno()); on('cerrar', () => openCerrarTurno()); on('sal', () => openSalida()); on('nsal', () => openSalida());
@@ -950,13 +1143,13 @@ function metricasHtml() {
       <div class="big ${resK < 0 ? 'red' : ''}" style="margin-top:4px">${resK < 0 ? '−' : ''}${money(Math.abs(resK))}</div>
       <div class="muted small">Ingresos ${money(ingK)} − gastos ${money(gastos(k))}${retiros(k) ? ` · retiros del dueño ${money(retiros(k))} (aparte)` : ''}</div>
       <div class="small" style="margin-top:6px">${delta >= 0 ? '<span class="green">▲' : '<span class="red">▼'} ${money(Math.abs(delta))}</span> <span class="muted">vs ${mesNombre(kp)} (${resP < 0 ? '−' : ''}${money(Math.abs(resP))})</span></div></section>
-    <div class="card"><b>Ingresos vs gastos</b><div class="bars" style="gap:8px">${ult.map(x => `<div class="bc"><div style="display:flex;gap:3px;align-items:flex-end;height:100%;width:100%"><i style="flex:1;height:${Math.max(2, Math.round(x.ing / mx * 92))}px" class="${x.ing ? '' : 'zero'}"></i><i style="flex:1;height:${Math.max(2, Math.round(gastos(x.k) / mx * 92))}px;background:var(--wood)" class="${gastos(x.k) ? '' : 'zero'}"></i></div><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div>
-      <p class="muted small" style="margin-top:8px"><span class="gold">■</span> ingresos · <span class="red">■</span> gastos (sin retiros)</p></div>
+    <div class="card"><b>Ingresos vs gastos</b><div class="bars" style="gap:8px">${ult.map(x => `<div class="bc"><div style="display:flex;gap:3px;align-items:flex-end;height:100%;width:100%"><i style="flex:1;height:${Math.max(2, Math.round(x.ing / mx * 92))}px;${x.ing ? 'background:var(--tint)' : ''}" class="${x.ing ? '' : 'zero'}"></i><i style="flex:1;height:${Math.max(2, Math.round(gastos(x.k) / mx * 92))}px;background:var(--wood)" class="${gastos(x.k) ? '' : 'zero'}"></i></div><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div>
+      <p class="muted small" style="margin-top:8px"><span class="green">■</span> ingresos · <span class="gold">■</span> gastos (sin retiros)</p></div>
     <h2>Gastos de ${mesNombre(k)}</h2><div class="card">${cats.length ? cats.map(([cat, v]) => `<div class="mbar"><span>${esc(cat)}</span><div class="tr"><i style="width:${Math.round(v / catMax * 100)}%;${cat === 'Retiro del dueño' ? 'background:var(--label3)' : ''}"></i></div><b class="gold">${money(v)}</b></div>`).join('') : '<div class="empty">Sin salidas este mes</div>'}</div>
     <h2>Préstamos</h2>${c.prestamos.length ? c.prestamos.map(x => {
       const pct = x.monto ? Math.min(100, Math.round(x.pagado / x.monto * 100)) : 0, faltan = x.abono ? Math.ceil(Math.max(0, x.restante) / x.abono) : null;
-      return `<div class="card"><div style="display:flex;justify-content:space-between;gap:10px"><b>${esc(x.nombre)}</b><span class="gold">${pct}%</span></div>
-        <div class="mbar"><div class="tr"><i style="width:${pct}%"></i></div></div>
+      return `<div class="card"><b>${esc(x.nombre)}</b>
+        <div class="gauges" style="margin:6px 0 4px">${gauge(x.monto ? x.pagado / x.monto : 0, pct, 'Avance')}${gauge(x.monto ? x.pagado / x.monto : 0, x.pagado, 'Pagado', 'money')}</div>
         <div class="kv" style="margin-bottom:8px"><div><span>Pagado</span><b class="green">${money(x.pagado)}</b></div><div><span>Restante</span><b>${money(x.restante)}</b></div>
         <div><span>Monto total</span><b>${money(x.monto)}</b></div><div><span>Abono</span><b>${x.abono ? money(x.abono) + (faltan !== null ? ` · faltan ≈${faltan}` : '') : '—'}</b></div></div>
         ${x.restante > 0 ? `<button class="btn sm ghost" data-abono="${esc(x.nombre)}">+ Registrar abono</button>` : '<span class="badge b-ok">Liquidado</span>'}</div>`;
@@ -1187,6 +1380,8 @@ function demoApi(accion, x, pin) {
 }
 
 /* ===================== ARRANQUE ===================== */
+buildBackground();
+playIntro();
 render();
 if (S.pin) refresh(true);
 if ('serviceWorker' in navigator && !DEMO) navigator.serviceWorker.register('sw.js').catch(() => {});
