@@ -66,6 +66,7 @@ function doPost(e) {
       case 'turno_abrir': return adm_json_(adm_escribir_(rol, () => adm_turnoAbrir_(req)));
       case 'turno_cerrar': return adm_json_(adm_escribir_(rol, () => adm_turnoCerrar_(req)));
       case 'salida': return adm_json_(adm_escribir_(rol, () => adm_salida_(rol, req.salida || {})));
+      case 'exportar_todo': if (rol !== 'dueno') return adm_json_({ ok: false, error: 'permiso' }); return adm_json_(adm_exportarTodo_());
       case 'producto_guardar':
         if (rol !== 'dueno') return adm_json_({ ok: false, error: 'permiso' });
         return adm_json_(adm_escribir_(rol, () => adm_productoGuardar_(req.producto || {})));
@@ -791,6 +792,88 @@ function adm_horaTxt_(v, tz) {
   if (typeof v === 'number') { const t = Math.round(v * 1440); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
   if (v instanceof Date) return Utilities.formatDate(v, tz, 'H:mm');
   return String(v || '');
+}
+
+/* ---------- Exportación completa (para migrar a la base de la app) ---------- */
+function adm_exportarTodo_() {
+  const ss = adm_ss_(), tz = ss.getSpreadsheetTimeZone();
+  const ymd = v => v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : '';
+  const hm = v => v instanceof Date ? Utilities.formatDate(v, tz, 'H:mm') : (typeof v === 'number' ? (() => { const t = Math.round(v * 1440); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); })() : String(v || ''));
+  const idDe = etiqueta => String(etiqueta || '').split(' - ')[0].trim();
+  const out = { ok: true };
+  // Socios
+  const so = ss.getSheetByName('Socios').getRange(ADM.PRIMERA_FILA_SOCIOS, 1, ADM.ULTIMA_FILA_SOCIOS - ADM.PRIMERA_FILA_SOCIOS + 1, 11).getValues();
+  out.socios = so.filter(r => String(r[1]).trim()).map(r => ({
+    num: Number(String(r[0]).replace(/\D/g, '')), id: String(r[0]).trim(), nombre: String(r[1]).trim().replace(/\s+/g, ' '),
+    wa: String(r[2]).replace(/\D/g, '').slice(-10), membresia: String(r[3]), plan: String(r[4]), inscripcion: ymd(r[5]), nacimiento: ymd(r[6]),
+    correo: String(r[7]).trim(), emergencia: String(r[8]).trim(), activo: String(r[9]).trim() !== 'No', notas: String(r[10]).trim()
+  }));
+  // Pagos
+  const pg = ss.getSheetByName('Pagos');
+  const pl = adm_ultimaFila_(pg, ADM.PRIMERA_FILA_PAGOS, ADM.ULTIMA_FILA_PAGOS, [1, 4]);
+  out.pagos = pl < ADM.PRIMERA_FILA_PAGOS ? [] : pg.getRange(ADM.PRIMERA_FILA_PAGOS, 1, pl - ADM.PRIMERA_FILA_PAGOS + 1, ADM.COL_TURNO_PAGOS).getValues()
+    .filter(r => r[0] instanceof Date && String(r[1]).trim()).map(r => ({
+      fecha: ymd(r[0]), socio_id: String(r[7] || idDe(r[1])).trim(), periodo: String(r[2]), monto: Number(r[3]) || 0, metodo: String(r[4]),
+      recibio: String(r[5]), notas: String(r[6]), lista: Number(r[9]) || 0, inicia: ymd(r[10]), vence: ymd(r[11]), turno: String(r[12] || '')
+    }));
+  // Asistencias (todas las pestañas de meses) + horas del registro
+  const horas = {};
+  const reg = ss.getSheetByName(ADM.HOJA_REGISTRO);
+  if (reg && reg.getLastRow() >= 2) reg.getRange(2, 1, reg.getLastRow() - 1, 5).getValues().forEach(r => {
+    if (r[0] instanceof Date) horas[ymd(r[0]) + '|' + String(r[2]).trim()] = { hora: hm(r[1]), registro: String(r[4]) };
+  });
+  out.asistencias = [];
+  ss.getSheets().filter(h => /^Asistencias/.test(h.getName())).forEach(h => {
+    const fechas = h.getRange(7, 4, 1, 31).getValues()[0];
+    const ids = h.getRange(8, 1, 500, 1).getDisplayValues();
+    const grid = h.getRange(8, 4, 500, 31).getValues();
+    for (let i = 0; i < 500; i++) {
+      const id = String(ids[i][0]).trim(); if (!id) continue;
+      for (let d = 0; d < 31; d++) {
+        const v = grid[i][d];
+        if (v === '' || v === null || !(fechas[d] instanceof Date)) continue;
+        const f = ymd(fechas[d]), k = horas[f + '|' + id];
+        out.asistencias.push({ fecha: f, socio_id: id, hora: k ? k.hora : (typeof v === 'number' ? hm(v) : ''), registro: k ? k.registro : 'Capturada a mano' });
+      }
+    }
+  });
+  // Inventario y ventas
+  out.productos = ss.getSheetByName('Inventario').getRange(ADM.PRIMERA_FILA_INV, 1, ADM.ULTIMA_FILA_INV - ADM.PRIMERA_FILA_INV + 1, 6).getValues()
+    .filter(r => String(r[0]).trim()).map(r => ({ nombre: String(r[0]).trim(), precio: Number(r[1]) || 0, recibidas: Number(r[2]) || 0, minimo: r[5] === '' ? null : Number(r[5]) }));
+  const vt = ss.getSheetByName('Ventas');
+  const vl = adm_ultimaFila_(vt, ADM.PRIMERA_FILA_VENTAS, ADM.ULTIMA_FILA_VENTAS, [1, 4]);
+  out.ventas = vl < ADM.PRIMERA_FILA_VENTAS ? [] : vt.getRange(ADM.PRIMERA_FILA_VENTAS, 1, vl - ADM.PRIMERA_FILA_VENTAS + 1, ADM.COL_TURNO_VENTAS).getValues()
+    .filter(r => r[0] instanceof Date && String(r[2]).trim()).map(r => ({
+      fecha: ymd(r[0]), hora: '', socio_id: idDe(r[1]), producto: String(r[2]).trim(), cantidad: Number(r[3]) || 0, precio: Number(r[4]) || 0,
+      total: Number(r[5]) || 0, metodo: String(r[6]), notas: String(r[7]), turno: String(r[10] || '')
+    }));
+  // Caja
+  const tu = ss.getSheetByName(ADM.HOJA_TURNOS);
+  out.turnos = !tu || tu.getLastRow() < 2 ? [] : tu.getRange(2, 1, tu.getLastRow() - 1, ADM_TURNO_COLS.length).getValues().filter(r => String(r[0]).trim()).map(r => ({
+    id: String(r[0]), persona: String(r[1]), fecha: ymd(r[2]), hora: hm(r[3]), dejo: Number(r[4]) || 0, inicial: Number(r[5]) || 0, dif_apertura: Number(r[6]) || 0,
+    cobros: Number(r[7]) || 0, ventas: Number(r[8]) || 0, salidas: Number(r[9]) || 0, esperado: Number(r[10]) || 0, contado: Number(r[11]) || 0,
+    diferencia: Number(r[12]) || 0, motivo: String(r[13]), transferencias: Number(r[14]) || 0, tarjeta: Number(r[15]) || 0,
+    fecha_cierre: ymd(r[16]), hora_cierre: r[17] === '' ? '' : hm(r[17]), estado: String(r[18])
+  }));
+  const sa = ss.getSheetByName(ADM.HOJA_SALIDAS);
+  out.salidas = !sa || sa.getLastRow() < 2 ? [] : sa.getRange(2, 1, sa.getLastRow() - 1, ADM_SALIDA_COLS.length).getValues().filter(r => r[0] instanceof Date).map(r => ({
+    fecha: ymd(r[0]), hora: hm(r[1]), categoria: String(r[2]), concepto: String(r[3]), pagado_a: String(r[4]), monto: Number(r[5]) || 0,
+    origen: String(r[6]), prestamo: String(r[7]), turno: String(r[8]), registro: String(r[9]), notas: String(r[10])
+  }));
+  out.prestamos = adm_prestamos_(ss).map(p => ({ nombre: p.nombre, monto: p.monto, previo: p.previo, abono: p.abono, notas: p.notas }));
+  // Configuración y tarifas
+  const cf = ss.getSheetByName('Configuración'), t = ss.getSheetByName('Tarifas').getRange('A3:G6').getValues();
+  const tarifas = {};
+  for (let i = 1; i < t.length; i++) if (t[i][0]) { tarifas[t[i][0]] = {}; for (let j = 1; j < 7; j++) tarifas[t[i][0]][t[0][j]] = Number(t[i][j]) || 0; }
+  const meses = {}; cf.getRange('A16:B21').getValues().forEach(r => { if (r[0]) meses[r[0]] = Number(r[1]) || 0; });
+  out.config = {
+    gym: cf.getRange('B4').getDisplayValue(), lada: cf.getRange('B5').getDisplayValue(), dias_anticipacion: cf.getRange('B6').getDisplayValue(),
+    tolerancia: cf.getRange('B7').getDisplayValue(), msg_recordatorio: cf.getRange('B8').getValue(), msg_vencido: cf.getRange('B9').getValue(),
+    msg_visita: cf.getRange('B26').getValue(), msg_nuevo: cf.getRange('B27').getValue(), hora_gracias: cf.getRange('B28').getDisplayValue(),
+    personal: cf.getRange('B31').getDisplayValue() || ADM.PERSONAL_DEFAULT, aviso_minimo: String(ss.getSheetByName('Inventario').getRange('B3').getValue() || 5),
+    umbral_asistencia: String(ss.getSheetByName('Asistencias').getRange('C4').getValue() || 7), tarifas: tarifas, meses_periodo: meses
+  };
+  return out;
 }
 
 /* ---------- Configuración única: asistencia con «A» ----------
