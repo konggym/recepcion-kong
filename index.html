@@ -1158,7 +1158,7 @@ function cortesHtml() {
   const porDia = {}; cs.forEach(x => { const d = x.fechaCierre || x.fecha; (porDia[d] = porDia[d] || []).push(x); });
   Object.keys(porDia).sort().reverse().forEach(d => {
     h += `<h2>${esc(dayLabel(d))}</h2><div class="card flush">${porDia[d].map(x => `<button class="li wrap" data-corte="${esc(x.id)}"><div class="av">${esc(initial(x.persona))}</div>
-      <div class="mid"><div class="t">${esc(x.persona)} · ${esc(x.hora)}–${esc(x.horaCierre)}</div>
+      <div class="mid"><div class="t">${esc(x.persona)} · ${x.fechaCierre && x.fecha !== x.fechaCierre ? esc(dayLabel(x.fecha).split(' ')[0].toLowerCase()) + ' ' : ''}${esc(x.hora)} – ${esc(x.horaCierre)}</div>
       <div class="s">Contó ${money(x.contado)}${x.retiro ? ` · retiró ${money(x.retiro)} · dejó ${money(dejaU(x))}` : ` · dejó ${money(dejaU(x))}`}</div></div>
       <div class="end">${difBadge(x.diferencia)}</div>${ic('chev', 'chev')}</button>`).join('')}</div>`;
   });
@@ -1172,7 +1172,7 @@ async function openCorte(id) {
   const draw = () => {
     const movs = x.movs.filter(mv => st.f === 'todos' || (st.f === 'efectivo' ? !informativo(mv.metodo) : informativo(mv.metodo)));
     const n = { todos: x.movs.length, efectivo: x.movs.filter(mv => !informativo(mv.metodo)).length, otros: x.movs.filter(mv => informativo(mv.metodo)).length };
-    const linea = (l, v, cls, strong) => `<div class="mbar"${strong ? ' style="border-top:1px solid var(--sep);padding-top:9px"' : ''}><span>${strong ? '<b>' + l + '</b>' : l}</span><div style="flex:1"></div><b class="${cls || ''}">${v}</b></div>`;
+    const linea = (l, v, cls, strong) => `<div class="mbar"${strong ? ' style="border-top:1px solid var(--sep);padding-top:9px"' : ''}><span style="width:auto">${strong ? '<b>' + l + '</b>' : l}</span><div style="flex:1"></div><b class="${cls || ''}">${v}</b></div>`;
     openSheet(`${sheetHead(abierto ? 'Turno en curso' : 'Detalle del corte', `${esc(x.persona)} · ${esc(dayLabel(x.fecha))} ${esc(x.hora)}${abierto ? '' : ' – ' + (x.fechaCierre !== x.fecha ? esc(dayLabel(x.fechaCierre)) + ' ' : '') + esc(x.horaCierre)}`)}
       ${abierto ? '' : `<div class="total-row"><span class="muted">Resultado del corte</span>${difBadge(x.diferencia)}</div>`}
       <div class="card" style="margin-bottom:12px">
@@ -1282,9 +1282,9 @@ function openCerrarTurno() {
         if (st.modo === 'fondo' && $('#cf').value !== '') {
           const f = num('#cf'), ret = Math.round((v - f) * 100) / 100;
           res = ret < 0 ? `<div class="note warn">El fondo no puede ser mayor a lo que contaste (${money(v)}).</div>`
-            : `<div class="card" style="margin-bottom:12px"><div class="mbar" style="margin-top:0"><span>Contado</span><div style="flex:1"></div><b>${money(v)}</b></div>
-               <div class="mbar"><span>− Se entrega a ${esc(st.destino)}</span><div style="flex:1"></div><b class="red">${money(ret)}</b></div>
-               <div class="mbar" style="border-top:1px solid var(--sep);padding-top:9px"><span><b>Queda en caja</b></span><div style="flex:1"></div><b class="gold">${money(f)}</b></div>
+            : `<div class="card" style="margin-bottom:12px"><div class="mbar" style="margin-top:0"><span style="width:auto">Contado</span><div style="flex:1"></div><b>${money(v)}</b></div>
+               <div class="mbar"><span style="width:auto">− Se entrega a ${esc(st.destino)}</span><div style="flex:1"></div><b class="red">${money(ret)}</b></div>
+               <div class="mbar" style="border-top:1px solid var(--sep);padding-top:9px"><span style="width:auto"><b>Queda en caja</b></span><div style="flex:1"></div><b class="gold">${money(f)}</b></div>
                <p class="muted small" style="margin-top:8px">Quien abra el siguiente turno debe recibir exactamente ${money(f)}: así la caja no se descuadra.</p></div>`;
         } else if (st.modo === 'todo') res = `<p class="muted small" style="margin-bottom:12px">Los ${money(v)} contados se quedan en caja para el siguiente turno.</p>`;
       }
