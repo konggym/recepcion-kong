@@ -84,9 +84,9 @@ function cors(res) {
 }
 
 /* ---------------------------- Fechas ------------------------------ */
-function ahoraMX() {
+function ahoraMX(fecha) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
-    .formatToParts(new Date()).map(x => [x.type, x.value]));
+    .formatToParts(fecha || new Date()).map(x => [x.type, x.value]));
   return { ymd: `${p.year}-${p.month}-${p.day}`, hm: `${Number(p.hour)}:${p.minute}` };
 }
 const d2n = ymd => Date.UTC(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10)) / 864e5;
@@ -111,7 +111,14 @@ function finPeriodo(cfg, desde, periodo) {
 /* ---------------------------- Base -------------------------------- */
 let esquemaListo = false;
 async function db(env) {
-  if (!esquemaListo) { await env.DB.batch(SCHEMA.map(q => env.DB.prepare(q))); esquemaListo = true; }
+  if (!esquemaListo) {
+    await env.DB.batch(SCHEMA.map(q => env.DB.prepare(q)));
+    // Columnas agregadas después (fondo que se deja al cerrar y retiro del corte)
+    const cols = (await all(env.DB, 'PRAGMA table_info(turnos)')).map(c => c.name);
+    for (const [c, t] of [['fondo', 'REAL'], ['retiro', 'REAL'], ['retiro_a', 'TEXT']])
+      if (!cols.includes(c)) await env.DB.prepare(`ALTER TABLE turnos ADD COLUMN ${c} ${t}`).run();
+    esquemaListo = true;
+  }
   return env.DB;
 }
 const all = async (D, q, ...b) => (await D.prepare(q).bind(...b).all()).results || [];
@@ -181,6 +188,7 @@ async function apiAdmin(env, req) {
     case 'producto_guardar': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return write(() => productoGuardar(D, req.producto || {}));
     case 'turno_abrir': return write(() => turnoAbrir(D, req));
     case 'turno_cerrar': return write(() => turnoCerrar(D, req));
+    case 'corte_detalle': return corteDetalle(D, rol, req.id);
     case 'salida': return write(() => salida(D, rol, req.salida || {}));
     case 'ajustes_leer': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return ajustesLeer(D);
     case 'ajustes_guardar': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return write(() => ajustesGuardar(D, req.ajustes || {}));
@@ -326,20 +334,32 @@ async function datos(D, rol) {
   return out;
 }
 
+function horaPago(p) {
+  const d = new Date(p.creado || '');
+  return isNaN(d) ? { fecha: p.fecha, hora: '' } : (x => ({ fecha: x.ymd, hora: x.hm }))(ahoraMX(d));
+}
 function sumasTurno(id, pagRows, venRows, salRows, nombreDe) {
   const s = { cobros: 0, ventas: 0, salidas: 0, transferencias: 0, tarjeta: 0, movs: [] };
   const met = (m, x) => { if (m === 'Transferencia') s.transferencias += x; else if (m === 'Tarjeta') s.tarjeta += x; };
   pagRows.filter(p => p.turno === id).forEach(p => {
     if (p.metodo === 'Efectivo') s.cobros += p.monto; else met(p.metodo, p.monto);
-    s.movs.push({ tipo: 'pago', texto: `${nombreDe[p.socio_id] || p.socio_id} · ${p.periodo}`, metodo: p.metodo, monto: p.monto });
+    const h = horaPago(p);
+    s.movs.push({ tipo: 'pago', texto: `${nombreDe[p.socio_id] || p.socio_id} · ${p.periodo}`, detalle: p.notas || '', metodo: p.metodo, monto: p.monto,
+      fecha: h.fecha, hora: h.hora, quien: p.recibio || '', orden: p.id || 0 });
   });
   venRows.filter(v => v.turno === id).forEach(v => {
     if (v.metodo === 'Efectivo') s.ventas += v.total; else met(v.metodo, v.total);
-    s.movs.push({ tipo: 'venta', texto: `${v.cantidad} × ${v.producto}`, metodo: v.metodo, monto: v.total });
+    s.movs.push({ tipo: 'venta', texto: `${v.cantidad} × ${v.producto}`, detalle: (v.socio_id ? (nombreDe[v.socio_id] || v.socio_id) : '') + (v.notas ? (v.socio_id ? ' · ' : '') + v.notas : ''),
+      metodo: v.metodo, monto: v.total, fecha: v.fecha, hora: v.hora || '', quien: '', orden: v.id || 0 });
   });
   salRows.filter(x => x.turno === id && x.origen === 'Caja').forEach(x => {
-    s.salidas += x.monto; s.movs.push({ tipo: 'salida', texto: `${x.categoria} · ${x.concepto}`, metodo: 'Caja', monto: -x.monto });
+    s.salidas += x.monto;
+    s.movs.push({ tipo: 'salida', texto: `${x.categoria} · ${x.concepto}`, detalle: [x.pagado_a, x.notas].filter(Boolean).join(' · '), metodo: 'Caja', monto: -x.monto,
+      fecha: x.fecha, hora: x.hora || '', quien: x.registro || '', orden: x.id || 0 });
   });
+  // Orden cronológico (los movimientos sin hora, de antes de la base nueva, quedan en su orden de registro)
+  const k = m => m.hora ? m.fecha + ' ' + pad(m.hora) : '';
+  s.movs.sort((a, b) => (k(a) && k(b)) ? k(a).localeCompare(k(b)) : 0);
   return s;
 }
 function prestamosCalc(preRows, salRows) {
@@ -358,7 +378,10 @@ function caja(cfg, rol, turRows, salRows, preRows, pagRows, venRows, nombreDe) {
   }
   const cerrados = turRows.filter(t => t.estado === 'Cerrado').sort((a, b) => (a.fecha_cierre + pad(a.hora_cierre)).localeCompare(b.fecha_cierre + pad(b.hora_cierre)));
   const u = cerrados[cerrados.length - 1];
-  c.ultimoCierre = u ? { persona: u.persona, contado: u.contado, fecha: u.fecha_cierre, hora: u.hora_cierre } : null;
+  c.ultimoCierre = u ? { persona: u.persona, contado: u.contado, deja: dejaTurno(u), retiro: u.retiro || 0, retiroA: u.retiro_a || '', fecha: u.fecha_cierre, hora: u.hora_cierre } : null;
+  const ultFondo = cerrados.slice().reverse().find(t => t.fondo !== null && t.fondo !== undefined);
+  c.fondoSugerido = Number(cfg.fondo_caja) > 0 ? Number(cfg.fondo_caja) : (ultFondo ? ultFondo.fondo : null);
+  c.destinosRetiro = DESTINOS_RETIRO;
   const mapS = x => ({ fecha: x.fecha, hora: x.hora, categoria: x.categoria, concepto: x.concepto, pagadoA: x.pagado_a || '', monto: x.monto,
     origen: x.origen, prestamo: x.prestamo || '', turno: x.turno || '', registro: x.registro || '', notas: x.notas || '' });
   c.salidas = salRows.slice(-200).map(mapS);
@@ -366,14 +389,20 @@ function caja(cfg, rol, turRows, salRows, preRows, pagRows, venRows, nombreDe) {
   const gm = {};
   salRows.forEach(x => { const k = x.fecha.slice(0, 7); gm[k] = gm[k] || {}; gm[k][x.categoria] = (gm[k][x.categoria] || 0) + x.monto; });
   c.gastosMes = gm;
+  const rm = {}; cerrados.forEach(t => { if (t.retiro) { const k = String(t.fecha_cierre || t.fecha).slice(0, 7); rm[k] = (rm[k] || 0) + t.retiro; } });
+  c.retirosCorte = rm;
   c.cortes = cerrados.slice(-60).reverse().map(t => ({
     id: t.id, persona: t.persona, fecha: t.fecha, hora: t.hora, inicial: t.inicial, difApertura: t.dif_apertura || 0, cobros: t.cobros || 0,
     ventas: t.ventas || 0, salidas: t.salidas || 0, esperado: t.esperado || 0, contado: t.contado || 0, diferencia: t.diferencia || 0,
-    motivo: t.motivo || '', transferencias: t.transferencias || 0, tarjeta: t.tarjeta || 0, fechaCierre: t.fecha_cierre, horaCierre: t.hora_cierre
+    motivo: t.motivo || '', transferencias: t.transferencias || 0, tarjeta: t.tarjeta || 0, fechaCierre: t.fecha_cierre, horaCierre: t.hora_cierre,
+    dejo: t.dejo, retiro: t.retiro || 0, retiroA: t.retiro_a || '', deja: dejaTurno(t)
   }));
   return c;
 }
 const pad = hm => String(hm || '').padStart(5, '0');
+// Lo que un turno cerrado le deja al siguiente: el fondo si se retiró el resto, si no todo lo contado
+const dejaTurno = t => (t.fondo !== null && t.fondo !== undefined) ? t.fondo : t.contado;
+const DESTINOS_RETIRO = ['Dueño', 'Caja fuerte', 'Depósito al banco'];
 
 /* --------------------------- Escrituras --------------------------- */
 async function socioPorFila(D, fila, id) {
@@ -495,8 +524,8 @@ async function turnoAbrir(D, req) {
   if (!cfg.personalList.includes(persona)) return { ok: false, error: 'falta', campo: 'persona' };
   const contado = Number(req.contado);
   if (!(contado >= 0)) return { ok: false, error: 'falta', campo: 'contado' };
-  const u = await one(D, "SELECT contado FROM turnos WHERE estado = 'Cerrado' ORDER BY fecha_cierre DESC, length(hora_cierre) DESC, hora_cierre DESC LIMIT 1");
-  const dejo = u ? u.contado : contado;
+  const u = await one(D, "SELECT contado, fondo FROM turnos WHERE estado = 'Cerrado' ORDER BY fecha_cierre DESC, length(hora_cierre) DESC, hora_cierre DESC LIMIT 1");
+  const dejo = u ? dejaTurno(u) : contado;
   const { ymd, hm } = ahoraMX();
   const id = 'T-' + ymd.slice(2).replace(/-/g, '') + '-' + pad(hm).replace(':', '') + '-' + Math.random().toString(36).slice(2, 5);
   await run(D, 'INSERT INTO turnos(id, persona, fecha, hora, dejo, inicial, dif_apertura, motivo, estado) VALUES(?,?,?,?,?,?,?,?,?)',
@@ -518,10 +547,37 @@ async function turnoCerrar(D, req) {
   let motivo = String(req.motivo || '').trim();
   if (dif !== 0 && !motivo) return { ok: false, error: 'falta', campo: 'motivo' };
   if (t.motivo) motivo = 'Apertura: ' + t.motivo + (motivo ? ' · Cierre: ' + motivo : '');
+  // Dejar solo el fondo: lo demás se retira y el siguiente turno recibe exactamente el fondo
+  let fondo = null, retiro = 0, retiroA = '';
+  if (req.fondo !== undefined && req.fondo !== null && req.fondo !== '') {
+    fondo = Math.round(Number(req.fondo) * 100) / 100;
+    if (!(fondo >= 0) || fondo > contado) return { ok: false, error: 'falta', campo: 'fondo' };
+    retiro = Math.round((contado - fondo) * 100) / 100;
+    retiroA = retiro > 0 ? String(req.retiroA || 'Dueño') : '';
+    if (retiro > 0 && !DESTINOS_RETIRO.includes(retiroA)) return { ok: false, error: 'falta', campo: 'retiroA' };
+  }
   const { ymd, hm } = ahoraMX();
   await run(D, `UPDATE turnos SET cobros=?, ventas=?, salidas=?, esperado=?, contado=?, diferencia=?, motivo=?, transferencias=?, tarjeta=?,
-    fecha_cierre=?, hora_cierre=?, estado='Cerrado' WHERE id=?`, s.cobros, s.ventas, s.salidas, esperado, contado, dif, motivo, s.transferencias, s.tarjeta, ymd, hm, t.id);
-  return { ok: true, esperado, contado, diferencia: dif };
+    fecha_cierre=?, hora_cierre=?, fondo=?, retiro=?, retiro_a=?, estado='Cerrado' WHERE id=?`,
+    s.cobros, s.ventas, s.salidas, esperado, contado, dif, motivo, s.transferencias, s.tarjeta, ymd, hm, fondo, retiro, retiroA, t.id);
+  return { ok: true, esperado, contado, diferencia: dif, fondo, retiro, retiroA, deja: fondo !== null ? fondo : contado };
+}
+
+async function corteDetalle(D, rol, id) {
+  const t = await one(D, 'SELECT * FROM turnos WHERE id = ?', String(id || ''));
+  if (!t) return { ok: false, error: 'no_existe' };
+  if (rol !== 'dueno' && t.estado !== 'Abierto') return { ok: false, error: 'permiso' };
+  const [pagRows, venRows, salRows, socRows] = await Promise.all([
+    all(D, 'SELECT * FROM pagos WHERE turno = ? ORDER BY id', t.id), all(D, 'SELECT * FROM ventas WHERE turno = ? ORDER BY id', t.id),
+    all(D, 'SELECT * FROM salidas WHERE turno = ? ORDER BY id', t.id), all(D, 'SELECT id, nombre FROM socios')]);
+  const s = sumasTurno(t.id, pagRows, venRows, salRows, Object.fromEntries(socRows.map(x => [x.id, x.nombre])));
+  const abierto = t.estado === 'Abierto';
+  return { ok: true, corte: {
+    id: t.id, persona: t.persona, estado: t.estado, fecha: t.fecha, hora: t.hora, dejo: t.dejo, inicial: t.inicial, difApertura: t.dif_apertura || 0,
+    cobros: s.cobros, ventas: s.ventas, salidas: s.salidas, transferencias: s.transferencias, tarjeta: s.tarjeta,
+    esperado: abierto ? t.inicial + s.cobros + s.ventas - s.salidas : t.esperado, contado: abierto ? null : t.contado, diferencia: abierto ? null : (t.diferencia || 0),
+    motivo: t.motivo || '', fechaCierre: t.fecha_cierre || '', horaCierre: t.hora_cierre || '', fondo: t.fondo, retiro: t.retiro || 0, retiroA: t.retiro_a || '',
+    deja: abierto ? null : dejaTurno(t), movs: s.movs } };
 }
 
 async function salida(D, rol, x) {
@@ -549,7 +605,7 @@ async function salida(D, rol, x) {
 }
 
 /* ---------------------------- Ajustes ----------------------------- */
-const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal',
+const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal', 'fondo_caja',
   'msg_recordatorio', 'msg_vencido', 'msg_visita', 'msg_nuevo'];
 async function ajustesLeer(D) {
   const cfg = await leerConfig(D);

@@ -526,9 +526,9 @@ const ERR = {
   socio: 'No encontré a ese socio en el Sheet. Actualiza e intenta de nuevo.', lleno: 'Ya no hay filas libres en esa hoja del Sheet.',
   duplicado: 'Ya existe un producto con ese nombre.', permiso: 'Solo el dueño puede hacer esto.', mes_futuro: 'La pestaña Asistencias está en un mes futuro; revísala en el Sheet.',
   asistencia_fila: 'La fila de Asistencias no coincide con el socio; revisa el Sheet.', no_coincide: 'Los datos cambiaron en el Sheet; actualiza e intenta de nuevo.',
-  red: 'Sin conexión. Revisa tu internet e intenta de nuevo.', sin_configurar: 'La base de datos aún no tiene información.', pin_igual: 'El PIN de dueño y el de recepción deben ser distintos.', turno_abierto: 'Ya hay un turno abierto: ciérralo antes de abrir otro.', sin_turno: 'Primero abre un turno en Caja para registrar efectivo.', servidor: 'Hubo un error en el Sheet.'
+  red: 'Sin conexión. Revisa tu internet e intenta de nuevo.', sin_configurar: 'La base de datos aún no tiene información.', pin_igual: 'El PIN de dueño y el de recepción deben ser distintos.', no_existe: 'Ese corte ya no existe.', turno_abierto: 'Ya hay un turno abierto: ciérralo antes de abrir otro.', sin_turno: 'Primero abre un turno en Caja para registrar efectivo.', servidor: 'Hubo un error en el Sheet.'
 };
-const CAMPOS = { pin: 'que el PIN tenga 6 dígitos', persona: 'quién abre el turno', contado: 'el efectivo contado', motivo: 'el motivo de la diferencia', categoria: 'la categoría', concepto: 'el concepto', origen: 'de dónde salió el dinero', prestamo: 'el préstamo', nombre: 'el nombre', wa: 'un WhatsApp de 10 dígitos', membresia: 'la membresía', plan: 'el plan', periodo: 'el periodo', monto: 'el monto', metodo: 'el método de pago', producto: 'el producto', cantidad: 'la cantidad', piezas: 'las piezas', precio: 'el precio', hora: 'la hora' };
+const CAMPOS = { pin: 'que el PIN tenga 6 dígitos', fondo: 'un fondo válido (no mayor a lo contado)', retiroA: 'a quién se entrega el retiro', persona: 'quién abre el turno', contado: 'el efectivo contado', motivo: 'el motivo de la diferencia', categoria: 'la categoría', concepto: 'el concepto', origen: 'de dónde salió el dinero', prestamo: 'el préstamo', nombre: 'el nombre', wa: 'un WhatsApp de 10 dígitos', membresia: 'la membresía', plan: 'el plan', periodo: 'el periodo', monto: 'el monto', metodo: 'el método de pago', producto: 'el producto', cantidad: 'la cantidad', piezas: 'las piezas', precio: 'el precio', hora: 'la hora' };
 function errText(r) {
   if (!r) return ERR.red;
   if (r.error === 'falta') return 'Revisa ' + (CAMPOS[r.campo] || 'los datos');
@@ -1089,7 +1089,7 @@ async function pedirTurno() {
 function renderCaja(m) {
   if (!cajaActiva()) { m.innerHTML = '<h1 style="margin-bottom:12px">Caja</h1><div class="note warn">La sección de caja estará lista en cuanto se actualice el script del Sheet. Mientras tanto, cobros y ventas funcionan como siempre.</div>'; return; }
   const c = C(), t = c.turno;
-  const modes = [['turno', 'Turno'], ['salidas', 'Salidas']].concat(isOwner() ? [['metricas', 'Métricas']] : []);
+  const modes = [['turno', 'Turno'], ['salidas', 'Salidas']].concat(isOwner() ? [['cortes', 'Cortes'], ['metricas', 'Métricas']] : []);
   if (!modes.some(x => x[0] === S.ui.cajaMode)) S.ui.cajaMode = 'turno';
   const mode = S.ui.cajaMode;
   let h = `<h1 style="margin-bottom:12px">Caja</h1><div class="seg">${modes.map(([k, l]) => `<button data-m="${k}" class="${k === mode ? 'on' : ''}">${l}</button>`).join('')}</div>`;
@@ -1097,7 +1097,7 @@ function renderCaja(m) {
     if (!t) {
       const u = c.ultimoCierre;
       h += `<section class="hero"><div class="eyebrow">Caja cerrada</div><h1 style="margin-top:6px">Sin turno abierto</h1>
-        <p class="muted" style="margin-top:6px">${u ? `${esc(u.persona)} cerró ${esc(dayLabel(u.fecha).toLowerCase())} a las ${esc(u.hora)} y dejó <b class="gold">${money(u.contado)}</b> en caja.` : 'Aún no hay cortes registrados.'}</p></section>
+        <p class="muted" style="margin-top:6px">${u ? `${esc(u.persona)} cerró ${esc(dayLabel(u.fecha).toLowerCase())} a las ${esc(u.hora)} y dejó <b class="gold">${money(dejaU(u))}</b> en caja${u.retiro ? ` (retiró ${money(u.retiro)} · ${esc(u.retiroA)})` : ''}.` : 'Aún no hay cortes registrados.'}</p></section>
         <button class="btn" id="abrir">Abrir turno</button>
         <p class="muted small" style="margin-top:10px">Mientras no haya turno abierto no se pueden registrar cobros, ventas ni salidas en efectivo.</p>`;
     } else {
@@ -1114,13 +1114,15 @@ function renderCaja(m) {
         </div>
         <div class="row"><button class="btn ghost" id="sal">Salida de caja</button><button class="btn" id="cerrar">Hacer corte</button></div>
         <h2>Movimientos del turno <span class="n">${t.movs.length}</span></h2>
-        <div class="card flush">${t.movs.length ? t.movs.slice().reverse().map(x => `<div class="li"><div class="av ${x.tipo === 'pago' ? 't1' : x.tipo === 'venta' ? 't2' : 't3'}">${ic(x.tipo === 'pago' ? 'cash' : x.tipo === 'venta' ? 'bag' : 'up')}</div><div class="mid"><div class="t">${esc(x.texto)}</div><div class="s">${esc(x.metodo)}${x.metodo !== 'Efectivo' && x.metodo !== 'Caja' ? ' · informativo' : ''}</div></div><div class="end"><span class="money ${x.monto < 0 ? 'red' : ''}">${x.monto < 0 ? '−' : ''}${money(Math.abs(x.monto))}</span></div></div>`).join('') : '<div class="empty">Sin movimientos todavía</div>'}</div>`;
+        <div class="card flush">${t.movs.length ? t.movs.slice().reverse().map(movRow).join('') : '<div class="empty">Sin movimientos todavía</div>'}</div>`;
     }
   } else if (mode === 'salidas') {
     const list = c.salidas.slice().reverse().slice(0, 80);
     h += `<button class="btn" id="nsal">+ Registrar salida</button>
       ${!isOwner() ? '<p class="muted small" style="margin-top:8px">Recepción registra solo salidas pagadas con efectivo de la caja.</p>' : ''}
       <h2>Últimas salidas</h2><div class="card flush">${list.length ? list.map(x => `<div class="li"><div class="av t3">${ic('up')}</div><div class="mid"><div class="t">${esc(x.concepto)}</div><div class="s">${esc(x.categoria)}${x.pagadoA ? ' · ' + esc(x.pagadoA) : ''} · ${esc(x.origen)} · ${esc(x.registro)}</div></div><div class="end"><span class="money red">−${money(x.monto)}</span><span class="muted small">${esc(dayLabel(x.fecha))}</span></div></div>`).join('') : '<div class="empty">Aún no hay salidas</div>'}</div>`;
+  } else if (mode === 'cortes') {
+    h += cortesHtml();
   } else {
     h += metricasHtml();
   }
@@ -1130,6 +1132,71 @@ function renderCaja(m) {
   const on = (id, fn) => { const e = $('#' + id, m); if (e) e.onclick = fn; };
   on('abrir', () => openAbrirTurno()); on('cerrar', () => openCerrarTurno()); on('sal', () => openSalida()); on('nsal', () => openSalida());
   $$('[data-abono]', m).forEach(b => b.onclick = () => openSalida({ categoria: 'Pago de préstamo', prestamo: b.dataset.abono }));
+  $$('[data-corte]', m).forEach(b => b.onclick = () => openCorte(b.dataset.corte));
+}
+/* ---- Cortes: historial y detalle de cada movimiento ---- */
+const dejaU = u => (u && u.deja !== undefined && u.deja !== null) ? u.deja : (u ? u.contado : 0);
+const signo = n => (n < 0 ? '−' : '') + money(Math.abs(n));
+const informativo = met => met !== 'Efectivo' && met !== 'Caja';
+function movRow(x) {
+  const tipo = { pago: ['t1', 'cash', 'Cobro'], venta: ['t2', 'bag', 'Venta'], salida: ['t3', 'up', 'Salida'] }[x.tipo] || ['', 'note', ''];
+  const sub = [x.hora || '', tipo[2] + ' · ' + x.metodo + (informativo(x.metodo) ? ' (informativo)' : ''), x.detalle || '', x.quien ? 'registró ' + x.quien : ''].filter(Boolean).join(' · ');
+  return `<div class="li wrap"><div class="av ${tipo[0]}">${ic(tipo[1])}</div><div class="mid"><div class="t">${esc(x.texto)}</div><div class="s">${esc(sub)}</div></div>
+    <div class="end"><span class="money ${x.monto < 0 ? 'red' : informativo(x.metodo) ? 'muted' : ''}">${x.monto < 0 ? '−' : '+'}${money(Math.abs(x.monto))}</span></div></div>`;
+}
+function cortesHtml() {
+  const c = C(), t = c.turno, cs = c.cortes || [], k = ymKey(hoy());
+  const delMes = cs.filter(x => String(x.fechaCierre || x.fecha).slice(0, 7) === k);
+  const retirado = (c.retirosCorte || {})[k] || 0;
+  const faltantes = delMes.reduce((a, x) => a + (x.diferencia < 0 ? -x.diferencia : 0), 0), sobrantes = delMes.reduce((a, x) => a + (x.diferencia > 0 ? x.diferencia : 0), 0);
+  let h = `<section class="hero"><div class="eyebrow">Cortes de ${mesNombre(k)}</div>
+    <div class="big" style="margin-top:4px">${delMes.length}</div><div class="muted small">${delMes.filter(x => !x.diferencia).length} cuadraron · ${delMes.filter(x => x.diferencia).length} con diferencia</div>
+    <div class="kv" style="margin:14px 0 0;background:none;padding:0"><div><span>Retirado en cortes</span><b class="gold">${money(retirado)}</b></div>
+    <div><span>Faltantes / sobrantes</span><b>${faltantes ? `<span class="red">−${money(faltantes)}</span>` : '$0'} / ${sobrantes ? `<span class="gold">+${money(sobrantes)}</span>` : '$0'}</b></div></div></section>`;
+  if (t) h += `<h2>En curso</h2><div class="card flush"><button class="li" data-corte="${esc(t.id)}"><div class="av t1">${ic('clock')}</div><div class="mid"><div class="t">Turno de ${esc(t.persona)}</div><div class="s">Desde ${esc(t.hora)} · ${t.movs.length} movimientos</div></div><div class="end"><b>${money(t.esperado)}</b><span class="muted small">en caja</span></div>${ic('chev', 'chev')}</button></div>`;
+  if (!cs.length) return h + '<div class="card empty">Aún no hay cortes</div>';
+  const porDia = {}; cs.forEach(x => { const d = x.fechaCierre || x.fecha; (porDia[d] = porDia[d] || []).push(x); });
+  Object.keys(porDia).sort().reverse().forEach(d => {
+    h += `<h2>${esc(dayLabel(d))}</h2><div class="card flush">${porDia[d].map(x => `<button class="li wrap" data-corte="${esc(x.id)}"><div class="av">${esc(initial(x.persona))}</div>
+      <div class="mid"><div class="t">${esc(x.persona)} · ${esc(x.hora)}–${esc(x.horaCierre)}</div>
+      <div class="s">Contó ${money(x.contado)}${x.retiro ? ` · retiró ${money(x.retiro)} · dejó ${money(dejaU(x))}` : ` · dejó ${money(dejaU(x))}`}</div></div>
+      <div class="end">${difBadge(x.diferencia)}</div>${ic('chev', 'chev')}</button>`).join('')}</div>`;
+  });
+  return h;
+}
+async function openCorte(id) {
+  openSheet(`${sheetHead('Detalle del corte')}<div class="empty"><span class="spin">${ic('refresh')}</span> Cargando movimientos…</div>`);
+  const r = await api('corte_detalle', { id });
+  if (!r || !r.ok) { closeSheet(); return toast(errText(r), true); }
+  const x = r.corte, abierto = x.estado === 'Abierto', st = { f: 'todos' };
+  const draw = () => {
+    const movs = x.movs.filter(mv => st.f === 'todos' || (st.f === 'efectivo' ? !informativo(mv.metodo) : informativo(mv.metodo)));
+    const n = { todos: x.movs.length, efectivo: x.movs.filter(mv => !informativo(mv.metodo)).length, otros: x.movs.filter(mv => informativo(mv.metodo)).length };
+    const linea = (l, v, cls, strong) => `<div class="mbar"${strong ? ' style="border-top:1px solid var(--sep);padding-top:9px"' : ''}><span>${strong ? '<b>' + l + '</b>' : l}</span><div style="flex:1"></div><b class="${cls || ''}">${v}</b></div>`;
+    openSheet(`${sheetHead(abierto ? 'Turno en curso' : 'Detalle del corte', `${esc(x.persona)} · ${esc(dayLabel(x.fecha))} ${esc(x.hora)}${abierto ? '' : ' – ' + (x.fechaCierre !== x.fecha ? esc(dayLabel(x.fechaCierre)) + ' ' : '') + esc(x.horaCierre)}`)}
+      ${abierto ? '' : `<div class="total-row"><span class="muted">Resultado del corte</span>${difBadge(x.diferencia)}</div>`}
+      <div class="card" style="margin-bottom:12px">
+        ${linea('Fondo inicial', money(x.inicial))}
+        ${linea('+ Cobros en efectivo', money(x.cobros), 'green')}
+        ${linea('+ Ventas en efectivo', money(x.ventas), 'green')}
+        ${linea('− Salidas de caja', money(x.salidas), 'red')}
+        ${linea(abierto ? 'Esperado ahora' : 'Esperado', money(x.esperado), 'gold', true)}
+        ${abierto ? '' : linea('Contado', money(x.contado)) + linea('Diferencia', signo(x.diferencia), x.diferencia < 0 ? 'red' : x.diferencia > 0 ? 'gold' : 'green')}
+        ${!abierto && x.retiro ? linea('− Retirado (' + esc(x.retiroA) + ')', money(x.retiro), 'red') : ''}
+        ${abierto ? '' : linea('Quedó para el siguiente turno', money(x.deja), '', true)}
+        <p class="muted small" style="margin-top:10px">Informativo (no entra a la caja): transferencias ${money(x.transferencias)} · tarjeta ${money(x.tarjeta)}</p>
+      </div>
+      ${x.difApertura ? `<div class="note warn">Al abrir: el turno anterior dejó ${money(x.dejo)} y se recibieron ${money(x.inicial)} (${x.difApertura < 0 ? 'faltaban' : 'sobraban'} ${money(Math.abs(x.difApertura))}).</div>` : ''}
+      ${x.motivo ? `<div class="note">Notas: ${esc(x.motivo)}</div>` : ''}
+      <div class="seg" id="cf">${[['todos', 'Todos'], ['efectivo', 'Efectivo'], ['otros', 'Transf. / tarjeta']].map(([k, l]) => `<button data-f="${k}" class="${st.f === k ? 'on' : ''}">${l} ${n[k]}</button>`).join('')}</div>
+      <div class="card flush" style="margin-bottom:12px">
+        <div class="li"><div class="av">${ic('clock')}</div><div class="mid"><div class="t">Apertura</div><div class="s">${esc(x.hora)} · recibió ${money(x.inicial)}</div></div></div>
+        ${movs.length ? movs.map(movRow).join('') : '<div class="empty">Sin movimientos</div>'}
+        ${abierto ? '' : `<div class="li"><div class="av">${ic('lock')}</div><div class="mid"><div class="t">Corte</div><div class="s">${esc(x.horaCierre)} · contó ${money(x.contado)}${x.retiro ? ` · retiró ${money(x.retiro)} (${esc(x.retiroA)})` : ''} · dejó ${money(x.deja)}</div></div></div>`}
+      </div>
+      <button class="btn ghost" data-close>Cerrar</button>`, () => { $$('#cf button').forEach(b => b.onclick = () => { st.f = b.dataset.f; draw(); }); });
+  };
+  draw();
 }
 function metricasHtml() {
   const c = C(), p = S.d.panel, k = ymKey(hoy()), kp = ymKey(hoy(), -1), gm = c.gastosMes || {};
@@ -1155,12 +1222,11 @@ function metricasHtml() {
         <div class="kv" style="margin-bottom:8px"><div><span>Pagado</span><b class="green">${money(x.pagado)}</b></div><div><span>Restante</span><b>${money(x.restante)}</b></div>
         <div><span>Monto total</span><b>${money(x.monto)}</b></div><div><span>Abono</span><b>${x.abono ? money(x.abono) + (faltan !== null ? ` · faltan ≈${faltan}` : '') : '—'}</b></div></div>
         ${x.restante > 0 ? `<button class="btn sm ghost" data-abono="${esc(x.nombre)}">+ Registrar abono</button>` : '<span class="badge b-ok">Liquidado</span>'}</div>`;
-    }).join('') : '<div class="card empty">Sin préstamos</div>'}
-    <h2>Historial de cortes</h2><div class="card flush">${(c.cortes || []).length ? c.cortes.slice(0, 30).map(x => `<div class="li wrap"><div class="av">${esc(initial(x.persona))}</div><div class="mid"><div class="t">${esc(x.persona)} · ${esc(dayLabel(x.fechaCierre || x.fecha))} ${esc(x.hora)}–${esc(x.horaCierre)}</div><div class="s">Esperado ${money(x.esperado)} · contó ${money(x.contado)}${x.motivo ? ' · ' + esc(x.motivo) : ''}</div>${x.difApertura ? `<div class="s gold">Al abrir: ${x.difApertura < 0 ? 'faltaban' : 'sobraban'} ${money(Math.abs(x.difApertura))}</div>` : ''}</div><div class="end">${difBadge(x.diferencia)}</div></div>`).join('') : '<div class="empty">Aún no hay cortes</div>'}</div>`;
+    }).join('') : '<div class="card empty">Sin préstamos</div>'}`;
 }
 function openAbrirTurno() {
   const c = C(), u = c.ultimoCierre, st = { persona: '' };
-  openSheet(`${sheetHead('Abrir turno', u ? `${esc(u.persona)} dejó ${money(u.contado)} en caja` : 'Primer turno: cuenta el efectivo con el que empiezas')}
+  openSheet(`${sheetHead('Abrir turno', u ? `${esc(u.persona)} dejó ${money(dejaU(u))} en caja` : 'Primer turno: cuenta el efectivo con el que empiezas')}
     <label class="f"><span>¿Quién abre?</span><div class="pills" style="margin:0">${c.personal.map(x => `<button type="button" class="pill" data-p="${esc(x)}">${esc(x)}</button>`).join('')}</div></label>
     <label class="f"><span>Efectivo que hay en caja al recibir</span><input id="tc" inputmode="decimal" placeholder="0"></label>
     <div id="tdif"></div>
@@ -1168,7 +1234,7 @@ function openAbrirTurno() {
     <button class="btn" data-save id="ts">Abrir turno</button>`, () => {
     $$('[data-p]').forEach(b => b.onclick = () => { st.persona = b.dataset.p; $$('[data-p]').forEach(x => x.classList.toggle('on', x === b)); });
     const dif = () => {
-      const v = Number($('#tc').value), d = u && $('#tc').value !== '' ? Math.round((v - u.contado) * 100) / 100 : 0;
+      const v = Number($('#tc').value), d = u && $('#tc').value !== '' ? Math.round((v - dejaU(u)) * 100) / 100 : 0;
       $('#tdif').innerHTML = d ? `<div class="note warn">${d < 0 ? 'Faltan' : 'Sobran'} ${money(Math.abs(d))} respecto a lo que dejó ${esc(u.persona)}.</div>` : '';
       $('#tmw').style.display = d ? '' : 'none';
     };
@@ -1177,14 +1243,16 @@ function openAbrirTurno() {
       if (!st.persona) return toast('Elige quién abre el turno', true);
       if ($('#tc').value === '') return toast('Escribe el efectivo que recibes', true);
       const v = Number($('#tc').value.replace(/[^\d.]/g, ''));
-      if (u && v !== u.contado && !$('#tm').value.trim()) return toast('Explica la diferencia', true);
+      if (u && v !== dejaU(u) && !$('#tm').value.trim()) return toast('Explica la diferencia', true);
       const r = await send('turno_abrir', { persona: st.persona, contado: v, motivo: $('#tm').value }, `Turno de ${st.persona} abierto`);
       if (r) { closeSheet(); S.ui.cajaMode = 'turno'; }
     };
   });
 }
 function openCerrarTurno() {
-  const t = C().turno; if (!t) return;
+  const c = C(), t = c.turno; if (!t) return;
+  const destinos = c.destinosRetiro || ['Dueño', 'Caja fuerte', 'Depósito al banco'];
+  const st = { modo: c.fondoSugerido ? 'fondo' : 'todo', destino: destinos[0] };
   openSheet(`${sheetHead('Corte de caja', `Turno de ${esc(t.persona)} · desde ${esc(t.hora)}`)}
     <div class="kv"><div><span>Efectivo inicial</span><b>${money(t.inicial)}</b></div><div><span>Cobros + ventas</span><b class="green">${money(t.cobros + t.ventas)}</b></div>
     <div><span>Salidas de caja</span><b class="red">${money(t.salidas)}</b></div><div><span>Esperado en caja</span><b class="gold" style="font-size:20px">${money(t.esperado)}</b></div></div>
@@ -1192,22 +1260,53 @@ function openCerrarTurno() {
     <label class="f"><span>¿Cuánto efectivo contaste?</span><input id="cc" inputmode="decimal" placeholder="${t.esperado}"></label>
     <div id="cdif"></div>
     <label class="f" id="cmw" style="display:none"><span>Motivo de la diferencia</span><input id="cm" placeholder="Explica por qué no cuadra"></label>
-    <p class="muted small" style="margin-bottom:12px">El efectivo que cuentes se queda en caja para el siguiente turno.</p>
+    <label class="f"><span>¿Qué se queda en caja para el siguiente turno?</span>
+      <div class="seg f" id="cmo"><button type="button" data-v="todo">Todo lo contado</button><button type="button" data-v="fondo">Solo el fondo</button></div></label>
+    <div id="cfw">
+      <label class="f"><span>Fondo de caja que se queda</span><input id="cf" inputmode="decimal" value="${c.fondoSugerido != null ? c.fondoSugerido : ''}" placeholder="Ej. 500"></label>
+      <label class="f"><span>El resto se entrega a</span><div class="pills" style="margin:0" id="cdst">${destinos.map(x => `<button type="button" class="pill" data-d="${esc(x)}">${esc(x)}</button>`).join('')}</div></label>
+    </div>
+    <div id="cres"></div>
     <button class="btn" data-save id="cs">Hacer corte y cerrar turno</button>`, () => {
-    const dif = () => {
-      if ($('#cc').value === '') { $('#cdif').innerHTML = ''; $('#cmw').style.display = 'none'; return; }
-      const d = Math.round((Number($('#cc').value) - t.esperado) * 100) / 100;
-      $('#cdif').innerHTML = `<div class="total-row"><span class="muted">Diferencia</span>${difBadge(d)}</div>`;
-      $('#cmw').style.display = d ? '' : 'none';
+    const num = id => Number(String($(id).value).replace(/[^\d.]/g, ''));
+    const upd = () => {
+      $$('#cmo button').forEach(b => b.classList.toggle('on', b.dataset.v === st.modo));
+      $$('#cdst [data-d]').forEach(b => b.classList.toggle('on', b.dataset.d === st.destino));
+      $('#cfw').style.display = st.modo === 'fondo' ? '' : 'none';
+      const hay = $('#cc').value !== '', v = num('#cc');
+      const d = hay ? Math.round((v - t.esperado) * 100) / 100 : 0;
+      $('#cdif').innerHTML = hay ? `<div class="total-row"><span class="muted">Diferencia</span>${difBadge(d)}</div>` : '';
+      $('#cmw').style.display = hay && d ? '' : 'none';
+      let res = '';
+      if (hay) {
+        if (st.modo === 'fondo' && $('#cf').value !== '') {
+          const f = num('#cf'), ret = Math.round((v - f) * 100) / 100;
+          res = ret < 0 ? `<div class="note warn">El fondo no puede ser mayor a lo que contaste (${money(v)}).</div>`
+            : `<div class="card" style="margin-bottom:12px"><div class="mbar" style="margin-top:0"><span>Contado</span><div style="flex:1"></div><b>${money(v)}</b></div>
+               <div class="mbar"><span>− Se entrega a ${esc(st.destino)}</span><div style="flex:1"></div><b class="red">${money(ret)}</b></div>
+               <div class="mbar" style="border-top:1px solid var(--sep);padding-top:9px"><span><b>Queda en caja</b></span><div style="flex:1"></div><b class="gold">${money(f)}</b></div>
+               <p class="muted small" style="margin-top:8px">Quien abra el siguiente turno debe recibir exactamente ${money(f)}: así la caja no se descuadra.</p></div>`;
+        } else if (st.modo === 'todo') res = `<p class="muted small" style="margin-bottom:12px">Los ${money(v)} contados se quedan en caja para el siguiente turno.</p>`;
+      }
+      $('#cres').innerHTML = res;
     };
-    $('#cc').oninput = dif;
+    $$('#cmo button').forEach(b => b.onclick = () => { st.modo = b.dataset.v; upd(); });
+    $$('#cdst [data-d]').forEach(b => b.onclick = () => { st.destino = b.dataset.d; upd(); });
+    $('#cc').oninput = upd; $('#cf').oninput = upd; upd();
     $('#cs').onclick = async () => {
       if ($('#cc').value === '') return toast('Escribe cuánto contaste', true);
-      const v = Number($('#cc').value.replace(/[^\d.]/g, ''));
+      const v = num('#cc');
       if (Math.round((v - t.esperado) * 100) && !$('#cm').value.trim()) return toast('Explica la diferencia', true);
-      const r = await send('turno_cerrar', { id: t.id, contado: v, motivo: $('#cm').value });
+      const extra = { id: t.id, contado: v, motivo: $('#cm').value };
+      if (st.modo === 'fondo') {
+        if ($('#cf').value === '') return toast('Escribe el fondo que se queda en caja', true);
+        const f = num('#cf'); if (f > v) return toast('El fondo no puede ser mayor a lo contado', true);
+        extra.fondo = f; extra.retiroA = st.destino;
+      }
+      const r = await send('turno_cerrar', extra);
       if (r) openSheet(`${sheetHead('Corte registrado', `Turno de ${esc(t.persona)}`)}
-        <div class="kv"><div><span>Esperado</span><b>${money(r.esperado)}</b></div><div><span>Contado</span><b>${money(r.contado)}</b></div></div>
+        <div class="kv"><div><span>Esperado</span><b>${money(r.esperado)}</b></div><div><span>Contado</span><b>${money(r.contado)}</b></div>
+        ${r.retiro ? `<div><span>Entregado a ${esc(r.retiroA)}</span><b class="red">${money(r.retiro)}</b></div>` : ''}<div><span>Queda en caja</span><b class="gold">${money(r.deja !== undefined ? r.deja : r.contado)}</b></div></div>
         <div class="total-row"><span class="muted">Resultado</span>${difBadge(r.diferencia)}</div>
         <button class="btn" data-close>Listo</button>`);
     };
@@ -1269,6 +1368,7 @@ async function openAjustes() {
     <div class="f-row">${fila('aviso_minimo', 'Aviso de pocas piezas', 'number', 'min="0" inputmode="numeric"')}${fila('umbral_asistencia', 'Aviso de días sin venir', 'number', 'min="1" inputmode="numeric"')}</div>
     <div class="f-row">${fila('hora_gracias', 'Hora de agradecimientos')}${fila('lada', 'Lada WhatsApp', '', 'inputmode="numeric"')}</div>
     ${fila('personal', 'Personal que abre turno (separado por comas)')}
+    ${fila('fondo_caja', 'Fondo de caja que se deja al cerrar ($, vacío = el último usado)')}
     <h2>Tarifas</h2>
     <div class="card" style="overflow-x:auto;padding:12px"><table class="tt"><tr><th></th>${per.map(p => `<th>${p}</th>`).join('')}</tr>
       ${mem.map(m => `<tr><th>${esc(m)}</th>${per.map(p => `<td><input data-t="${esc(m)}|${p}" inputmode="decimal" value="${r.tarifas[m][p] || 0}"></td>`).join('')}</tr>`).join('')}</table></div>
@@ -1309,7 +1409,7 @@ async function descargarExcel(btn) {
       Asistencias: r.asistencias.map(a => ({ Fecha: a.fecha, Hora: a.hora, ID: a.socio_id, Socio: nom[a.socio_id] || '', Registró: a.registro })),
       Ventas: r.ventas.map(v => ({ Fecha: v.fecha, Hora: v.hora, ID: v.socio_id, Socio: nom[v.socio_id] || '', Producto: v.producto, Cantidad: v.cantidad, 'Precio unitario': v.precio, Total: v.total, Método: v.metodo, Notas: v.notas, Turno: v.turno })),
       Inventario: r.productos.map(p => ({ Producto: p.nombre, Precio: p.precio, 'Piezas recibidas': p.recibidas, 'Mínimo propio': p.minimo })),
-      Turnos: r.turnos.map(x => ({ ID: x.id, Persona: x.persona, 'Fecha apertura': x.fecha, 'Hora apertura': x.hora, 'Dejó el turno anterior': x.dejo, 'Efectivo inicial': x.inicial, 'Diferencia apertura': x.dif_apertura, 'Cobros efectivo': x.cobros, 'Ventas efectivo': x.ventas, 'Salidas de caja': x.salidas, Esperado: x.esperado, Contado: x.contado, Diferencia: x.diferencia, Motivo: x.motivo, Transferencias: x.transferencias, Tarjeta: x.tarjeta, 'Fecha cierre': x.fecha_cierre, 'Hora cierre': x.hora_cierre, Estado: x.estado })),
+      Turnos: r.turnos.map(x => ({ ID: x.id, Persona: x.persona, 'Fecha apertura': x.fecha, 'Hora apertura': x.hora, 'Dejó el turno anterior': x.dejo, 'Efectivo inicial': x.inicial, 'Diferencia apertura': x.dif_apertura, 'Cobros efectivo': x.cobros, 'Ventas efectivo': x.ventas, 'Salidas de caja': x.salidas, Esperado: x.esperado, Contado: x.contado, Diferencia: x.diferencia, Motivo: x.motivo, Transferencias: x.transferencias, Tarjeta: x.tarjeta, 'Fecha cierre': x.fecha_cierre, 'Hora cierre': x.hora_cierre, 'Retirado al cerrar': x.retiro || 0, 'Entregado a': x.retiro_a || '', 'Quedó en caja': (x.fondo !== null && x.fondo !== undefined) ? x.fondo : x.contado, Estado: x.estado })),
       Salidas: r.salidas.map(x => ({ Fecha: x.fecha, Hora: x.hora, Categoría: x.categoria, Concepto: x.concepto, 'Pagado a': x.pagado_a, Monto: x.monto, Origen: x.origen, Préstamo: x.prestamo, Turno: x.turno, Registró: x.registro, Notas: x.notas })),
       Préstamos: r.prestamos.map(p => ({ Préstamo: p.nombre, 'Monto total': p.monto, 'Pagado antes de la app': p.previo, 'Abono sugerido': p.abono, Notas: p.notas })),
       Configuración: r.config.map(c => ({ Clave: c.clave, Valor: c.valor }))
@@ -1344,7 +1444,7 @@ function demoInit() {
   const productos = [['Agua', 15, 24, 9], ['Monster', 45, 12, 10], ['Sting', 12, 0, 0], ['Proteína RTD', 55, 10, 3]].map(([n, p, r, v], i) => ({ fila: 5 + i, nombre: n, precio: p, recibidas: r, vendidas: v, existencia: r - v, minimo: null, estado: r - v <= 0 ? 'Agotado' : r - v <= 5 ? 'Pocas piezas' : 'OK', acumulado: v * p }));
   const ventas = [{ fila: 5, fecha: ymd(t), socio: 'KG-001 - Ana López', producto: 'Agua', cantidad: 2, precio: 15, total: 30, metodo: 'Efectivo', notas: '' }];
   const meses = Array.from({ length: 12 }, (_, i) => { const d = new Date(t.getFullYear(), t.getMonth() - 11 + i, 1); const v = i < 8 ? 0 : 3000 + i * 900; return { mes: MES[d.getMonth()] + ' ' + String(d.getFullYear()).slice(2), mensualidades: v, pagos: v / 400 | 0, ventas: i < 8 ? 0 : 150 * i, total: v + (i < 8 ? 0 : 150 * i) }; });
-  DB_CAJA = { turnos: [{ id: 'T-0', persona: 'Ariadna', fecha: ymd(add(-1)), hora: '15:00', inicial: 500, estado: 'Cerrado', contado: 1250, esperado: 1250, diferencia: 0, difApertura: 0, cobros: 700, ventas: 50, salidas: 0, motivo: '', transferencias: 400, tarjeta: 0, fechaCierre: ymd(add(-1)), horaCierre: '21:00' }], salidas: [{ fecha: ymd(add(-2)), hora: '12:10', categoria: 'Compras', concepto: 'Garrafones de agua', pagadoA: 'Purificadora', monto: 120, origen: 'Caja', prestamo: '', turno: 'T-0', registro: 'Ariadna', notas: '' }, { fecha: ymd(add(-1)), hora: '9:00', categoria: 'Servicios', concepto: 'Internet', pagadoA: 'Telmex', monto: 499, origen: 'Cuenta / tarjeta', prestamo: '', turno: '', registro: 'Dueño', notas: '' }], prestamos: [{ nombre: 'Préstamo $27,500', monto: 27500, previo: 1620, abono: 270, notas: '' }] };
+  DB_CAJA = { turnos: [{ id: 'T-0', persona: 'Ariadna', fecha: ymd(add(-1)), hora: '15:00', inicial: 500, estado: 'Cerrado', contado: 1250, esperado: 1250, diferencia: 0, difApertura: 0, cobros: 700, ventas: 50, salidas: 0, motivo: '', transferencias: 400, tarjeta: 0, fechaCierre: ymd(add(-1)), horaCierre: '21:00', dejo: 500, fondo: 500, retiro: 750, retiroA: 'Dueño', deja: 500 }], salidas: [{ fecha: ymd(add(-2)), hora: '12:10', categoria: 'Compras', concepto: 'Garrafones de agua', pagadoA: 'Purificadora', monto: 120, origen: 'Caja', prestamo: '', turno: 'T-0', registro: 'Ariadna', notas: '' }, { fecha: ymd(add(-1)), hora: '9:00', categoria: 'Servicios', concepto: 'Internet', pagadoA: 'Telmex', monto: 499, origen: 'Cuenta / tarjeta', prestamo: '', turno: '', registro: 'Dueño', notas: '' }], prestamos: [{ nombre: 'Préstamo $27,500', monto: 27500, previo: 1620, abono: 270, notas: '' }] };
   DB = { ok: true, hoy: ymd(t), hora: '10:00', gym: 'Kong Gym', horaGracias: '8:00 PM', periodos: Object.keys(tar.Individual), tarifas: tar, membresias: mem, planes: Object.keys(tar.Individual), socios: socs, asistencia: { mes: ymd(t).slice(0, 7), mesActual: ymd(t).slice(0, 7), umbral: 7, socios: asis, porDia }, pagos, ventas, avisoMinimo: 5, productos, panel: {} };
 }
 function demoPanel(rol) {
@@ -1359,24 +1459,30 @@ function demoPanel(rol) {
   return p;
 }
 
+function demoSumas(id) {
+    const s = { cobros: 0, ventas: 0, salidas: 0, transferencias: 0, tarjeta: 0, movs: [] };
+    DB.pagos.filter(x => x.turno === id).forEach(x => { if (x.metodo === 'Efectivo') s.cobros += x.monto; else if (x.metodo === 'Transferencia') s.transferencias += x.monto; else s.tarjeta += x.monto; s.movs.push({ tipo: 'pago', texto: x.nombre + ' · ' + x.periodo, metodo: x.metodo, monto: x.monto, hora: x.hora || '', quien: x.recibio || '' }); });
+    DB.ventas.filter(x => x.turno === id).forEach(x => { if (x.metodo === 'Efectivo') s.ventas += x.total; else if (x.metodo === 'Transferencia') s.transferencias += x.total; else s.tarjeta += x.total; s.movs.push({ tipo: 'venta', texto: x.cantidad + ' × ' + x.producto, metodo: x.metodo, monto: x.total, hora: x.hora || '' }); });
+    DB_CAJA.salidas.filter(x => x.turno === id && x.origen === 'Caja').forEach(x => { s.salidas += x.monto; s.movs.push({ tipo: 'salida', texto: x.categoria + ' · ' + x.concepto, detalle: x.pagadoA || '', metodo: 'Caja', monto: -x.monto, hora: x.hora || '', quien: x.registro || '' }); });
+  return s;
+}
 function demoCaja(rol) {
   const c = DB_CAJA, abierto = c.turnos.find(x => x.estado === 'Abierto');
   const pres = c.prestamos.map(x => { const pagado = x.previo + c.salidas.filter(s => s.categoria === 'Pago de préstamo' && s.prestamo === x.nombre).reduce((a, s) => a + s.monto, 0); return Object.assign({}, x, { pagado, restante: x.monto - pagado }); });
   const out = { personal: ['Jennifer', 'Ariadna', 'Dueño'], categorias: ['Compras', 'Servicios', 'Nómina', 'Obra y mejoras', 'Pago de préstamo', 'Retiro del dueño'], origenes: ['Caja', 'Cuenta / tarjeta'], prestamos: pres, turno: null };
   if (abierto) {
-    const s = { cobros: 0, ventas: 0, salidas: 0, transferencias: 0, tarjeta: 0, movs: [] };
-    DB.pagos.filter(x => x.turno === abierto.id).forEach(x => { if (x.metodo === 'Efectivo') s.cobros += x.monto; else if (x.metodo === 'Transferencia') s.transferencias += x.monto; else s.tarjeta += x.monto; s.movs.push({ tipo: 'pago', texto: x.nombre + ' · ' + x.periodo, metodo: x.metodo, monto: x.monto }); });
-    DB.ventas.filter(x => x.turno === abierto.id).forEach(x => { if (x.metodo === 'Efectivo') s.ventas += x.total; else if (x.metodo === 'Transferencia') s.transferencias += x.total; else s.tarjeta += x.total; s.movs.push({ tipo: 'venta', texto: x.cantidad + ' × ' + x.producto, metodo: x.metodo, monto: x.total }); });
-    c.salidas.filter(x => x.turno === abierto.id && x.origen === 'Caja').forEach(x => { s.salidas += x.monto; s.movs.push({ tipo: 'salida', texto: x.categoria + ' · ' + x.concepto, metodo: 'Caja', monto: -x.monto }); });
+    const s = demoSumas(abierto.id);
     out.turno = Object.assign({ id: abierto.id, persona: abierto.persona, fecha: abierto.fecha, hora: abierto.hora, inicial: abierto.inicial, esperado: abierto.inicial + s.cobros + s.ventas - s.salidas }, s);
   }
   const cerr = c.turnos.filter(x => x.estado === 'Cerrado');
   const u = cerr[cerr.length - 1];
-  out.ultimoCierre = u ? { persona: u.persona, contado: u.contado, fecha: u.fechaCierre, hora: u.horaCierre } : null;
+  out.ultimoCierre = u ? { persona: u.persona, contado: u.contado, deja: u.deja, retiro: u.retiro || 0, retiroA: u.retiroA || '', fecha: u.fechaCierre, hora: u.horaCierre } : null;
+  out.fondoSugerido = 500; out.destinosRetiro = ['Dueño', 'Caja fuerte', 'Depósito al banco'];
   out.salidas = c.salidas.filter(x => rol === 'dueno' || (x.origen === 'Caja' && x.categoria !== 'Retiro del dueño'));
   if (rol === 'dueno') {
     const gm = {}; c.salidas.forEach(x => { const k = x.fecha.slice(0, 7); gm[k] = gm[k] || {}; gm[k][x.categoria] = (gm[k][x.categoria] || 0) + x.monto; });
     out.gastosMes = gm; out.cortes = cerr.slice().reverse();
+    const rm = {}; cerr.forEach(t => { if (t.retiro) { const k = t.fechaCierre.slice(0, 7); rm[k] = (rm[k] || 0) + t.retiro; } }); out.retirosCorte = rm;
   }
   return out;
 }
@@ -1432,16 +1538,22 @@ function demoApi(accion, x, pin) {
     }
     if (accion === 'turno_abrir') {
       if (abierto) return res({ ok: false, error: 'turno_abierto' });
-      const u = DB_CAJA.turnos.filter(z => z.estado === 'Cerrado').pop(), dejo = u ? u.contado : x.contado;
-      DB_CAJA.turnos.push({ id: 'T-' + Date.now(), persona: x.persona, fecha: DB.hoy, hora: hhmm, inicial: x.contado, difApertura: x.contado - dejo, estado: 'Abierto', motivo: x.motivo || '' });
+      const u = DB_CAJA.turnos.filter(z => z.estado === 'Cerrado').pop(), dejo = u ? u.deja : x.contado;
+      DB_CAJA.turnos.push({ id: 'T-' + Date.now(), persona: x.persona, fecha: DB.hoy, hora: hhmm, dejo, inicial: x.contado, difApertura: x.contado - dejo, estado: 'Abierto', motivo: x.motivo || '' });
       return out({ ok: true });
     }
     if (accion === 'turno_cerrar') {
       if (!abierto) return res({ ok: false, error: 'sin_turno' });
       const t = demoCaja(rol).turno, dif = Math.round((x.contado - t.esperado) * 100) / 100;
       if (dif && !x.motivo) return res({ ok: false, error: 'falta', campo: 'motivo' });
-      Object.assign(abierto, { estado: 'Cerrado', contado: x.contado, esperado: t.esperado, diferencia: dif, motivo: [abierto.motivo, x.motivo].filter(Boolean).join(' · '), cobros: t.cobros, ventas: t.ventas, salidas: t.salidas, transferencias: t.transferencias, tarjeta: t.tarjeta, fechaCierre: DB.hoy, horaCierre: hhmm });
-      return out({ ok: true, esperado: t.esperado, contado: x.contado, diferencia: dif });
+      const fondo = x.fondo !== undefined ? x.fondo : null, retiro = fondo !== null ? x.contado - fondo : 0, deja = fondo !== null ? fondo : x.contado;
+      Object.assign(abierto, { estado: 'Cerrado', contado: x.contado, esperado: t.esperado, diferencia: dif, motivo: [abierto.motivo, x.motivo].filter(Boolean).join(' · '), cobros: t.cobros, ventas: t.ventas, salidas: t.salidas, transferencias: t.transferencias, tarjeta: t.tarjeta, fechaCierre: DB.hoy, horaCierre: hhmm, fondo, retiro, retiroA: retiro ? x.retiroA : '', deja });
+      return out({ ok: true, esperado: t.esperado, contado: x.contado, diferencia: dif, fondo, retiro, retiroA: retiro ? x.retiroA : '', deja });
+    }
+    if (accion === 'corte_detalle') {
+      const t = DB_CAJA.turnos.find(z => z.id === x.id); if (!t) return res({ ok: false, error: 'no_existe' });
+      const sm = demoSumas(t.id), ab = t.estado === 'Abierto';
+      return res({ ok: true, corte: Object.assign({}, t, sm, { dejo: t.dejo !== undefined ? t.dejo : t.inicial, esperado: ab ? t.inicial + sm.cobros + sm.ventas - sm.salidas : t.esperado, deja: ab ? null : t.deja, retiro: t.retiro || 0, retiroA: t.retiroA || '' }) });
     }
     if (accion === 'salida') {
       const sl = x.salida, origen = rol === 'dueno' ? sl.origen : 'Caja';
