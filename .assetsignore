@@ -4,3 +4,5 @@ README.md
 .gitignore
 .assetsignore
 google-sheets
+worker
+.wrangler

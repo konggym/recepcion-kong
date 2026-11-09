@@ -1,9 +1,15 @@
 {
-  // Configuración para Cloudflare Workers (sitio estático)
+  // Kong Gym Recepción: app (archivos estáticos) + servidor propio con base de datos D1
   "name": "recepcion-kong",
+  "main": "worker/index.js",
   "compatibility_date": "2026-11-01",
   "assets": {
     "directory": ".",
-    "not_found_handling": "single-page-application"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*"]
+  },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "kong-gym", "database_id": "34e574ee-4bf0-4c65-8314-e70957c1264a" }
+  ]
 }
