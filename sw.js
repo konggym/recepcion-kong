@@ -1,5 +1,5 @@
 /* Kong Gym Admin · service worker: abre sin internet (con los últimos datos) y se actualiza solo */
-const VERSION = 'kong-admin-v11';
+const VERSION = 'kong-admin-v12';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

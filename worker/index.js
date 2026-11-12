@@ -327,6 +327,31 @@ async function datos(D, rol) {
         return { mes: `${MESES[+ini.slice(5, 7) - 1]} ${ini.slice(2, 4)}`, mensualidades: a, pagos: pm.length, ventas: b, total: a + b };
       })
     });
+    // ARPU: ingreso por mensualidades (sin ventas) entre socios activos ahora, del último mes ya cerrado
+    const mesArpuIni = addMonths(mesIni, -1), mesArpuFin = eom(mesArpuIni);
+    const pagArpu = pagRows.filter(p => enMes(p.fecha, mesArpuIni, mesArpuFin));
+    const socioMem = Object.fromEntries(socios.map(s => [s.id, s.membresia]));
+    const ingArpuPorTipo = {};
+    pagArpu.forEach(p => { const t = socioMem[p.socio_id]; if (t) ingArpuPorTipo[t] = (ingArpuPorTipo[t] || 0) + p.monto; });
+    const ingArpu = pagArpu.reduce((a, p) => a + p.monto, 0);
+    const pagadores = new Set(pagArpu.map(p => p.socio_id)).size;
+    const porTipoArpu = {};
+    Object.keys(cfg.tarifas).forEach(t => {
+      const n = porMembresia[t] || 0, ing = ingArpuPorTipo[t] || 0;
+      porTipoArpu[t] = { activos: n, ingreso: ing, arpu: n ? Math.round(ing / n) : 0, tarifa: cfg.tarifas[t] && cfg.tarifas[t].Mensual || 0 };
+    });
+    out.panel.arpu = {
+      mes: `${MESES[+mesArpuIni.slice(5, 7) - 1]} ${mesArpuIni.slice(2, 4)}`,
+      activos, ingreso: ingArpu, arpu: activos ? Math.round(ingArpu / activos) : 0,
+      pagadores, arppu: pagadores ? Math.round(ingArpu / pagadores) : 0,
+      porTipo: porTipoArpu,
+      tendencia: Array.from({ length: 6 }, (_, i) => {
+        const ini = addMonths(mesArpuIni, i - 5), fin = eom(ini);
+        const pm = pagRows.filter(p => enMes(p.fecha, ini, fin));
+        const ing = pm.reduce((a, p) => a + p.monto, 0);
+        return { mes: `${MESES[+ini.slice(5, 7) - 1]} ${ini.slice(2, 4)}`, arpu: activos ? Math.round(ing / activos) : 0, ingreso: ing };
+      })
+    };
   }
 
   // Caja

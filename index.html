@@ -1198,6 +1198,24 @@ async function openCorte(id) {
   };
   draw();
 }
+
+function arpuHtml(a) {
+  if (!a) return '';
+  const tipos = Object.entries(a.porTipo || {});
+  const mxTend = Math.max(1, ...(a.tendencia || []).map(x => x.arpu));
+  return `<h2>ARPU de ${esc(a.mes)}</h2>
+    <div class="card">
+      <div class="gauges" style="margin:6px 0 4px">${gauge(a.activos ? a.arpu / Math.max(a.arpu, a.arppu, 1) : 0, a.arpu, 'ARPU', 'money')}${gauge(a.activos ? a.arppu / Math.max(a.arpu, a.arppu, 1) : 0, a.arppu, 'ARPPU', 'money')}</div>
+      <div class="kv" style="margin-bottom:4px"><div><span>Socios activos</span><b>${a.activos}</b></div><div><span>Pagaron este mes</span><b>${a.pagadores} <span class="muted small">(${a.activos ? Math.round(a.pagadores / a.activos * 100) : 0}%)</span></b></div>
+      <div><span>Ingreso por mensualidades</span><b class="green">${money(a.ingreso)}</b></div><div><span>ARPU</span><b class="gold">${money(a.arpu)}</b></div></div>
+      <p class="muted small" style="margin-top:6px">ARPU = ingreso ÷ socios activos (incluye a quien no pagó). ARPPU = ingreso ÷ solo quienes sí pagaron. Si hay mucha diferencia entre los dos, el problema es de cobranza, no de precio.</p>
+    </div>
+    <div class="card"><b>ARPU por membresía</b>
+      ${tipos.map(([t, x]) => `<div class="mbar"><span>${esc(t)} <span class="muted small">(${x.activos})</span></span><div class="tr"><i style="width:${x.tarifa ? Math.min(100, Math.round(x.arpu / x.tarifa * 100)) : 0}%"></i></div><b class="${x.arpu < x.tarifa * 0.7 ? 'red' : 'gold'}">${money(x.arpu)}</b></div>`).join('')}
+      <p class="muted small" style="margin-top:8px">La barra muestra el ARPU como % de la tarifa mensual de lista; mientras más corta, más se está perdiendo por pagos atrasados o vencidos.</p>
+    </div>
+    <div class="card"><b>Tendencia de ARPU (6 meses)</b><div class="bars" style="gap:8px">${(a.tendencia || []).map(x => `<div class="bc"><i style="height:${Math.max(2, Math.round(x.arpu / mxTend * 92))}px;${x.arpu ? 'background:var(--tint)' : ''}" class="${x.arpu ? '' : 'zero'}"></i><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div></div>`;
+}
 function metricasHtml() {
   const c = C(), p = S.d.panel, k = ymKey(hoy()), kp = ymKey(hoy(), -1), gm = c.gastosMes || {};
   const gastos = key => Object.entries(gm[key] || {}).filter(([cat]) => cat !== 'Retiro del dueño').reduce((a, [, v]) => a + v, 0);
@@ -1215,6 +1233,7 @@ function metricasHtml() {
     <div class="card"><b>Ingresos vs gastos</b><div class="bars" style="gap:8px">${ult.map(x => `<div class="bc"><div style="display:flex;gap:3px;align-items:flex-end;height:100%;width:100%"><i style="flex:1;height:${Math.max(2, Math.round(x.ing / mx * 92))}px;${x.ing ? 'background:var(--tint)' : ''}" class="${x.ing ? '' : 'zero'}"></i><i style="flex:1;height:${Math.max(2, Math.round(gastos(x.k) / mx * 92))}px;background:var(--wood)" class="${gastos(x.k) ? '' : 'zero'}"></i></div><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div>
       <p class="muted small" style="margin-top:8px"><span class="green">■</span> ingresos · <span class="gold">■</span> gastos (sin retiros)</p></div>
     <h2>Gastos de ${mesNombre(k)}</h2><div class="card">${cats.length ? cats.map(([cat, v]) => `<div class="mbar"><span>${esc(cat)}</span><div class="tr"><i style="width:${Math.round(v / catMax * 100)}%;${cat === 'Retiro del dueño' ? 'background:var(--label3)' : ''}"></i></div><b class="gold">${money(v)}</b></div>`).join('') : '<div class="empty">Sin salidas este mes</div>'}</div>
+    ${arpuHtml(p.arpu)}
     <h2>Préstamos</h2>${c.prestamos.length ? c.prestamos.map(x => {
       const pct = x.monto ? Math.min(100, Math.round(x.pagado / x.monto * 100)) : 0, faltan = x.abono ? Math.ceil(Math.max(0, x.restante) / x.abono) : null;
       return `<div class="card"><b>${esc(x.nombre)}</b>
