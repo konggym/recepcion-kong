@@ -51,6 +51,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS salidas (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, hora TEXT, categoria TEXT, concepto TEXT, pagado_a TEXT,
      monto REAL, origen TEXT, prestamo TEXT, turno TEXT, registro TEXT, notas TEXT)`,
   `CREATE TABLE IF NOT EXISTS prestamos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, monto REAL, previo REAL, abono REAL, notas TEXT)`,
+  `CREATE TABLE IF NOT EXISTS equilibrio_items (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, monto REAL)`,
+  `CREATE TABLE IF NOT EXISTS equilibrio_check (mes TEXT, nombre TEXT, PRIMARY KEY(mes, nombre))`,
   `CREATE TABLE IF NOT EXISTS bloqueos (clave TEXT PRIMARY KEY, n INTEGER, hasta INTEGER)`
 ];
 
@@ -189,6 +191,7 @@ async function apiAdmin(env, req) {
     case 'turno_abrir': return write(() => turnoAbrir(D, req));
     case 'turno_cerrar': return write(() => turnoCerrar(D, req));
     case 'corte_detalle': return corteDetalle(D, rol, req.id);
+    case 'equilibrio_marcar': return write(() => equilibrioMarcar(D, rol, req));
     case 'salida': return write(() => salida(D, rol, req.salida || {}));
     case 'ajustes_leer': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return ajustesLeer(D);
     case 'ajustes_guardar': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return write(() => ajustesGuardar(D, req.ajustes || {}));
@@ -327,13 +330,22 @@ async function datos(D, rol) {
         return { mes: `${MESES[+ini.slice(5, 7) - 1]} ${ini.slice(2, 4)}`, mensualidades: a, pagos: pm.length, ventas: b, total: a + b };
       })
     });
-    const peq = Number(cfg.punto_equilibrio) || 0;
-    if (peq > 0) {
-      const ingMesActual = mens + vts;
-      out.panel.puntoEquilibrio = {
-        meta: peq, ingresoMes: ingMesActual, pct: Math.round(ingMesActual / peq * 100), falta: Math.max(0, peq - ingMesActual),
-        meses: out.panel.meses.map((m, i, arr) => ({ mes: m.mes, ingreso: m.total, cumplio: m.total >= peq, enCurso: i === arr.length - 1 }))
-      };
+    const itemsEq = await all(D, 'SELECT nombre, monto FROM equilibrio_items ORDER BY id');
+    if (itemsEq.length) {
+      const metaEq = itemsEq.reduce((a, x) => a + (Number(x.monto) || 0), 0);
+      const checkActual = await all(D, 'SELECT nombre FROM equilibrio_check WHERE mes = ?', mes);
+      const marcadosActual = new Set(checkActual.map(r => r.nombre));
+      const items = itemsEq.map(x => ({ nombre: x.nombre, monto: Number(x.monto) || 0, marcado: marcadosActual.has(x.nombre) }));
+      const cubierto = items.filter(x => x.marcado).reduce((a, x) => a + x.monto, 0);
+      const mesesEq = [];
+      for (let i = 5; i >= 0; i--) {
+        const mi = addMonths(mesIni, -i).slice(0, 7);
+        const rows = i === 0 ? checkActual : await all(D, 'SELECT nombre FROM equilibrio_check WHERE mes = ?', mi);
+        const marcSet = new Set(rows.map(r => r.nombre));
+        const suma = itemsEq.filter(x => marcSet.has(x.nombre)).reduce((a, x) => a + (Number(x.monto) || 0), 0);
+        mesesEq.push({ mes: `${MESES[+mi.slice(5, 7) - 1]} ${mi.slice(2, 4)}`, pct: metaEq ? Math.round(suma / metaEq * 100) : 0, cumplio: suma >= metaEq, enCurso: i === 0 });
+      }
+      out.panel.puntoEquilibrio = { meta: metaEq, cubierto, pct: metaEq ? Math.round(cubierto / metaEq * 100) : 0, falta: Math.max(0, metaEq - cubierto), items, meses: mesesEq };
     }
     // ARPU: ingreso por mensualidades (sin ventas) entre socios activos ahora, del último mes ya cerrado
     const mesArpuIni = addMonths(mesIni, -1), mesArpuFin = eom(mesArpuIni);
@@ -613,6 +625,15 @@ async function corteDetalle(D, rol, id) {
     deja: abierto ? null : dejaTurno(t), movs: s.movs } };
 }
 
+async function equilibrioMarcar(D, rol, req) {
+  if (rol !== 'dueno') return { ok: false, error: 'permiso' };
+  const mes = String(req.mes || '').slice(0, 7), nombre = String(req.nombre || '').trim();
+  if (!isYmd(mes + '-01') || !nombre) return { ok: false, error: 'falta' };
+  if (req.marcado) await run(D, 'INSERT OR IGNORE INTO equilibrio_check(mes, nombre) VALUES(?, ?)', mes, nombre);
+  else await run(D, 'DELETE FROM equilibrio_check WHERE mes = ? AND nombre = ?', mes, nombre);
+  return { ok: true };
+}
+
 async function salida(D, rol, x) {
   const cat = String(x.categoria || '');
   if (!CATEGORIAS.includes(cat)) return { ok: false, error: 'falta', campo: 'categoria' };
@@ -638,11 +659,12 @@ async function salida(D, rol, x) {
 }
 
 /* ---------------------------- Ajustes ----------------------------- */
-const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal', 'fondo_caja', 'punto_equilibrio',
+const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal', 'fondo_caja',
   'msg_recordatorio', 'msg_vencido', 'msg_visita', 'msg_nuevo'];
 async function ajustesLeer(D) {
   const cfg = await leerConfig(D);
-  const out = { ok: true, tarifas: cfg.tarifas, prestamos: await all(D, 'SELECT nombre, monto, previo, abono, notas FROM prestamos ORDER BY id') };
+  const out = { ok: true, tarifas: cfg.tarifas, prestamos: await all(D, 'SELECT nombre, monto, previo, abono, notas FROM prestamos ORDER BY id'),
+    equilibrio: await all(D, 'SELECT nombre, monto FROM equilibrio_items ORDER BY id') };
   AJUSTES_TEXTO.forEach(k => { out[k] = String(cfg[k] === undefined ? '' : (k === 'personal' ? cfg.personal : cfg[k])); });
   return out;
 }
@@ -659,6 +681,13 @@ async function ajustesGuardar(D, a) {
       await run(D, `INSERT INTO prestamos(nombre, monto, previo, abono, notas) VALUES(?,?,?,?,?)
         ON CONFLICT(nombre) DO UPDATE SET monto = excluded.monto, previo = excluded.previo, abono = excluded.abono, notas = excluded.notas`,
         nombre, Number(p.monto) || 0, Number(p.previo) || 0, Number(p.abono) || 0, String(p.notas || ''));
+    }
+  }
+  if (Array.isArray(a.equilibrio)) {
+    await run(D, 'DELETE FROM equilibrio_items');
+    for (const it of a.equilibrio) {
+      const nombre = String(it.nombre || '').trim(); if (!nombre) continue;
+      await run(D, 'INSERT INTO equilibrio_items(nombre, monto) VALUES(?, ?) ON CONFLICT(nombre) DO UPDATE SET monto = excluded.monto', nombre, Number(it.monto) || 0);
     }
   }
   for (const k of ['pin_dueno', 'pin_recepcion']) {

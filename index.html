@@ -1133,6 +1133,7 @@ function renderCaja(m) {
   on('abrir', () => openAbrirTurno()); on('cerrar', () => openCerrarTurno()); on('sal', () => openSalida()); on('nsal', () => openSalida());
   $$('[data-abono]', m).forEach(b => b.onclick = () => openSalida({ categoria: 'Pago de préstamo', prestamo: b.dataset.abono }));
   $$('[data-corte]', m).forEach(b => b.onclick = () => openCorte(b.dataset.corte));
+  $$('[data-peq]', m).forEach(b => b.onclick = () => togglePeq(b.dataset.peq, b.dataset.on !== '1'));
 }
 /* ---- Cortes: historial y detalle de cada movimiento ---- */
 const dejaU = u => (u && u.deja !== undefined && u.deja !== null) ? u.deja : (u ? u.contado : 0);
@@ -1200,25 +1201,26 @@ async function openCorte(id) {
 }
 
 
+async function togglePeq(nombre, marcado) { await send('equilibrio_marcar', { mes: ymKey(hoy()), nombre, marcado }); }
 function peqHtml(x, kActual) {
-  if (!x) return '';
-  const falta = x.falta, ok = x.ingresoMes >= x.meta;
+  if (!x || !x.items || !x.items.length) return '';
+  const ok = x.cubierto >= x.meta;
   const meses6 = (x.meses || []).slice(-6);
-  const mx = Math.max(x.meta, ...meses6.map(m => m.ingreso)) * 1.05;
-  const lineaPct = Math.min(100, Math.round(x.meta / mx * 100));
   return `<h2>Punto de equilibrio</h2>
     <div class="card">
-      <div class="gauges" style="margin:6px 0 4px">${gauge(Math.min(1, x.pct / 100), x.pct, 'Del mes', 'pct')}${gauge(Math.min(1, x.ingresoMes / x.meta), x.ingresoMes, 'Ingreso', 'money')}</div>
-      <div class="kv" style="margin-bottom:4px"><div><span>Meta mensual</span><b>${money(x.meta)}</b></div><div><span>Llevas en ${esc(mesNombre(kActual))}</span><b class="${ok ? 'green' : 'gold'}">${money(x.ingresoMes)}</b></div>
-      <div><span>${ok ? 'Superávit' : 'Falta para cubrirlo'}</span><b class="${ok ? 'green' : 'red'}">${ok ? '+' : ''}${money(ok ? x.ingresoMes - x.meta : falta)}</b></div></div>
-      <p class="muted small" style="margin-top:6px">${ok ? 'Este mes ya cubriste tu punto de equilibrio.' : `Vas al ${x.pct}% de la meta; a este ritmo falta ${money(falta)} para cubrir gastos fijos.`}</p>
+      <div class="gauges" style="margin:6px 0 4px">${gauge(Math.min(1, x.pct / 100), x.pct, 'Del mes', 'pct')}${gauge(x.meta ? Math.min(1, x.cubierto / x.meta) : 0, x.cubierto, 'Cubierto', 'money')}</div>
+      <div class="kv" style="margin-bottom:4px"><div><span>Meta mensual</span><b>${money(x.meta)}</b></div><div><span>Cubierto en ${esc(mesNombre(kActual))}</span><b class="${ok ? 'green' : 'gold'}">${money(x.cubierto)}</b></div>
+      <div><span>${ok ? 'Superávit' : 'Falta por marcar'}</span><b class="${ok ? 'green' : 'red'}">${ok ? '+' : ''}${money(ok ? x.cubierto - x.meta : x.falta)}</b></div></div>
+      <p class="muted small" style="margin-top:6px">${ok ? 'Ya marcaste todos los conceptos del mes.' : 'Marca cada concepto conforme lo vayas cubriendo este mes con tus ingresos reales.'}</p>
     </div>
-    <div class="card"><b>Ingreso vs. punto de equilibrio (6 meses)</b>
-      <div class="bars" style="gap:8px;margin-top:14px;position:relative">
-        <div style="position:absolute;left:0;right:0;bottom:${lineaPct}%;border-top:2px dashed var(--red);pointer-events:none"></div>
-        ${meses6.map(m => `<div class="bc"><i style="height:${Math.max(2, Math.round(m.ingreso / mx * 92))}px;${m.ingreso ? (m.cumplio ? 'background:var(--tint)' : 'background:var(--wood)') : ''}${m.enCurso ? ';opacity:.55' : ''}" class="${m.ingreso ? '' : 'zero'}"></i><small>${esc(String(m.mes).split(' ')[0])}${m.enCurso ? ' *' : ''}</small></div>`).join('')}
+    <div class="card flush"><b style="display:block;padding:12px 16px 4px">Conceptos de ${esc(mesNombre(kActual))}</b>
+      ${x.items.map(it => `<button class="li" data-peq="${esc(it.nombre)}" data-on="${it.marcado ? '1' : '0'}"><div class="av ${it.marcado ? 't1' : ''}">${it.marcado ? ic('check') : ''}</div><div class="mid"><div class="t">${esc(it.nombre)}</div></div><b class="${it.marcado ? 'green' : ''}">${money(it.monto)}</b></button>`).join('')}
+    </div>
+    <div class="card"><b>Avance mensual (6 meses)</b>
+      <div class="bars" style="gap:8px;margin-top:14px">
+        ${meses6.map(m => `<div class="bc"><i style="height:${Math.max(2, Math.round(m.pct / 100 * 92))}px;${m.pct ? (m.cumplio ? 'background:var(--tint)' : 'background:var(--wood)') : ''}${m.enCurso ? ';opacity:.55' : ''}" class="${m.pct ? '' : 'zero'}"></i><small>${esc(String(m.mes).split(' ')[0])}${m.enCurso ? ' *' : ''}</small></div>`).join('')}
       </div>
-      <p class="muted small" style="margin-top:8px"><span class="green">■</span> cubrió el punto de equilibrio · <span class="gold">■</span> no lo cubrió · línea punteada: meta (${money(x.meta)})${meses6.some(m => m.enCurso) ? ' · * mes en curso' : ''}</p>
+      <p class="muted small" style="margin-top:8px"><span class="green">■</span> cubrió el punto de equilibrio · <span class="gold">■</span> no lo cubrió${meses6.some(m => m.enCurso) ? ' · * mes en curso' : ''}</p>
     </div>`;
 }
 function arpuHtml(a) {
@@ -1411,10 +1413,13 @@ async function openAjustes() {
     <div class="f-row">${fila('hora_gracias', 'Hora de agradecimientos')}${fila('lada', 'Lada WhatsApp', '', 'inputmode="numeric"')}</div>
     ${fila('personal', 'Personal que abre turno (separado por comas)')}
     ${fila('fondo_caja', 'Fondo de caja que se deja al cerrar ($, vacío = el último usado)')}
-    ${fila('punto_equilibrio', 'Punto de equilibrio mensual ($, vacío = no mostrar)')}
     <h2>Tarifas</h2>
     <div class="card" style="overflow-x:auto;padding:12px"><table class="tt"><tr><th></th>${per.map(p => `<th>${p}</th>`).join('')}</tr>
       ${mem.map(m => `<tr><th>${esc(m)}</th>${per.map(p => `<td><input data-t="${esc(m)}|${p}" inputmode="decimal" value="${r.tarifas[m][p] || 0}"></td>`).join('')}</tr>`).join('')}</table></div>
+    <h2>Punto de equilibrio</h2>
+    <p class="muted small" style="margin:-4px 2px 10px">Desglosa tu punto de equilibrio en conceptos (renta, nómina, préstamo…). La meta es la suma de todos. Cada mes los marcas como cubiertos en Métricas.</p>
+    ${(r.equilibrio || []).map((e, i) => `<div class="card" data-e="${i}"><div class="f-row"><label class="f"><span>Concepto</span><input data-ek="nombre" value="${esc(e.nombre)}" placeholder="Ej. Renta"></label><label class="f"><span>Monto</span><input data-ek="monto" inputmode="decimal" value="${e.monto}"></label></div></div>`).join('')}
+    <div class="card" data-e="new"><div class="f-row"><label class="f"><span>Nuevo concepto (opcional)</span><input data-ek="nombre" placeholder="Ej. Servicios"></label><label class="f"><span>Monto</span><input data-ek="monto" inputmode="decimal" placeholder="0"></label></div></div>
     <h2>Préstamos</h2>
     ${r.prestamos.map((p, i) => `<div class="card" data-p="${i}"><label class="f"><span>Nombre</span><input data-pk="nombre" value="${esc(p.nombre)}" readonly></label>
       <div class="f-row"><label class="f"><span>Monto total</span><input data-pk="monto" inputmode="decimal" value="${p.monto}"></label><label class="f"><span>Abono sugerido</span><input data-pk="abono" inputmode="decimal" value="${p.abono}"></label></div>
@@ -1431,6 +1436,7 @@ async function openAjustes() {
       $$('.sheet [data-k]').forEach(i => { a[i.dataset.k] = i.value.trim(); });
       a.tarifas = {}; $$('.sheet [data-t]').forEach(i => { const [m, p] = i.dataset.t.split('|'); (a.tarifas[m] = a.tarifas[m] || {})[p] = Number(i.value) || 0; });
       a.prestamos = $$('.sheet [data-p]').map(c => { const o = {}; $$('[data-pk]', c).forEach(i => { o[i.dataset.pk] = i.value.trim(); }); return o; }).filter(p => p.nombre);
+      a.equilibrio = $$('.sheet [data-e]').map(c => { const o = {}; $$('[data-ek]', c).forEach(i => { o[i.dataset.ek] = i.value.trim(); }); return o; }).filter(e => e.nombre);
       const pd = $('#pd').value.trim(), pr = $('#pr').value.trim();
       if ((pd && !/^\d{6}$/.test(pd)) || (pr && !/^\d{6}$/.test(pr))) return toast('Los PIN deben tener 6 dígitos', true);
       if (pd) a.pin_dueno = pd; if (pr) a.pin_recepcion = pr;
