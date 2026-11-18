@@ -327,6 +327,14 @@ async function datos(D, rol) {
         return { mes: `${MESES[+ini.slice(5, 7) - 1]} ${ini.slice(2, 4)}`, mensualidades: a, pagos: pm.length, ventas: b, total: a + b };
       })
     });
+    const peq = Number(cfg.punto_equilibrio) || 0;
+    if (peq > 0) {
+      const ingMesActual = mens + vts;
+      out.panel.puntoEquilibrio = {
+        meta: peq, ingresoMes: ingMesActual, pct: Math.round(ingMesActual / peq * 100), falta: Math.max(0, peq - ingMesActual),
+        meses: out.panel.meses.map((m, i, arr) => ({ mes: m.mes, ingreso: m.total, cumplio: m.total >= peq, enCurso: i === arr.length - 1 }))
+      };
+    }
     // ARPU: ingreso por mensualidades (sin ventas) entre socios activos ahora, del último mes ya cerrado
     const mesArpuIni = addMonths(mesIni, -1), mesArpuFin = eom(mesArpuIni);
     const pagArpu = pagRows.filter(p => enMes(p.fecha, mesArpuIni, mesArpuFin));
@@ -630,7 +638,7 @@ async function salida(D, rol, x) {
 }
 
 /* ---------------------------- Ajustes ----------------------------- */
-const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal', 'fondo_caja',
+const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal', 'fondo_caja', 'punto_equilibrio',
   'msg_recordatorio', 'msg_vencido', 'msg_visita', 'msg_nuevo'];
 async function ajustesLeer(D) {
   const cfg = await leerConfig(D);

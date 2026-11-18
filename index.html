@@ -1199,6 +1199,28 @@ async function openCorte(id) {
   draw();
 }
 
+
+function peqHtml(x, kActual) {
+  if (!x) return '';
+  const falta = x.falta, ok = x.ingresoMes >= x.meta;
+  const meses6 = (x.meses || []).slice(-6);
+  const mx = Math.max(x.meta, ...meses6.map(m => m.ingreso)) * 1.05;
+  const lineaPct = Math.min(100, Math.round(x.meta / mx * 100));
+  return `<h2>Punto de equilibrio</h2>
+    <div class="card">
+      <div class="gauges" style="margin:6px 0 4px">${gauge(Math.min(1, x.pct / 100), x.pct, 'Del mes', 'pct')}${gauge(Math.min(1, x.ingresoMes / x.meta), x.ingresoMes, 'Ingreso', 'money')}</div>
+      <div class="kv" style="margin-bottom:4px"><div><span>Meta mensual</span><b>${money(x.meta)}</b></div><div><span>Llevas en ${esc(mesNombre(kActual))}</span><b class="${ok ? 'green' : 'gold'}">${money(x.ingresoMes)}</b></div>
+      <div><span>${ok ? 'Superávit' : 'Falta para cubrirlo'}</span><b class="${ok ? 'green' : 'red'}">${ok ? '+' : ''}${money(ok ? x.ingresoMes - x.meta : falta)}</b></div></div>
+      <p class="muted small" style="margin-top:6px">${ok ? 'Este mes ya cubriste tu punto de equilibrio.' : `Vas al ${x.pct}% de la meta; a este ritmo falta ${money(falta)} para cubrir gastos fijos.`}</p>
+    </div>
+    <div class="card"><b>Ingreso vs. punto de equilibrio (6 meses)</b>
+      <div class="bars" style="gap:8px;margin-top:14px;position:relative">
+        <div style="position:absolute;left:0;right:0;bottom:${lineaPct}%;border-top:2px dashed var(--red);pointer-events:none"></div>
+        ${meses6.map(m => `<div class="bc"><i style="height:${Math.max(2, Math.round(m.ingreso / mx * 92))}px;${m.ingreso ? (m.cumplio ? 'background:var(--tint)' : 'background:var(--wood)') : ''}${m.enCurso ? ';opacity:.55' : ''}" class="${m.ingreso ? '' : 'zero'}"></i><small>${esc(String(m.mes).split(' ')[0])}${m.enCurso ? ' *' : ''}</small></div>`).join('')}
+      </div>
+      <p class="muted small" style="margin-top:8px"><span class="green">■</span> cubrió el punto de equilibrio · <span class="gold">■</span> no lo cubrió · línea punteada: meta (${money(x.meta)})${meses6.some(m => m.enCurso) ? ' · * mes en curso' : ''}</p>
+    </div>`;
+}
 function arpuHtml(a) {
   if (!a) return '';
   const tipos = Object.entries(a.porTipo || {});
@@ -1233,6 +1255,7 @@ function metricasHtml() {
     <div class="card"><b>Ingresos vs gastos</b><div class="bars" style="gap:8px">${ult.map(x => `<div class="bc"><div style="display:flex;gap:3px;align-items:flex-end;height:100%;width:100%"><i style="flex:1;height:${Math.max(2, Math.round(x.ing / mx * 92))}px;${x.ing ? 'background:var(--tint)' : ''}" class="${x.ing ? '' : 'zero'}"></i><i style="flex:1;height:${Math.max(2, Math.round(gastos(x.k) / mx * 92))}px;background:var(--wood)" class="${gastos(x.k) ? '' : 'zero'}"></i></div><small>${esc(String(x.mes).split(' ')[0])}</small></div>`).join('')}</div>
       <p class="muted small" style="margin-top:8px"><span class="green">■</span> ingresos · <span class="gold">■</span> gastos (sin retiros)</p></div>
     <h2>Gastos de ${mesNombre(k)}</h2><div class="card">${cats.length ? cats.map(([cat, v]) => `<div class="mbar"><span>${esc(cat)}</span><div class="tr"><i style="width:${Math.round(v / catMax * 100)}%;${cat === 'Retiro del dueño' ? 'background:var(--label3)' : ''}"></i></div><b class="gold">${money(v)}</b></div>`).join('') : '<div class="empty">Sin salidas este mes</div>'}</div>
+    ${peqHtml(p.puntoEquilibrio, k)}
     ${arpuHtml(p.arpu)}
     <h2>Préstamos</h2>${c.prestamos.length ? c.prestamos.map(x => {
       const pct = x.monto ? Math.min(100, Math.round(x.pagado / x.monto * 100)) : 0, faltan = x.abono ? Math.ceil(Math.max(0, x.restante) / x.abono) : null;
@@ -1388,6 +1411,7 @@ async function openAjustes() {
     <div class="f-row">${fila('hora_gracias', 'Hora de agradecimientos')}${fila('lada', 'Lada WhatsApp', '', 'inputmode="numeric"')}</div>
     ${fila('personal', 'Personal que abre turno (separado por comas)')}
     ${fila('fondo_caja', 'Fondo de caja que se deja al cerrar ($, vacío = el último usado)')}
+    ${fila('punto_equilibrio', 'Punto de equilibrio mensual ($, vacío = no mostrar)')}
     <h2>Tarifas</h2>
     <div class="card" style="overflow-x:auto;padding:12px"><table class="tt"><tr><th></th>${per.map(p => `<th>${p}</th>`).join('')}</tr>
       ${mem.map(m => `<tr><th>${esc(m)}</th>${per.map(p => `<td><input data-t="${esc(m)}|${p}" inputmode="decimal" value="${r.tarifas[m][p] || 0}"></td>`).join('')}</tr>`).join('')}</table></div>
