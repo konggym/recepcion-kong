@@ -31,7 +31,8 @@ const DEFAULTS = {
   msg_recordatorio: 'Qué hay {nombre}! Te recordamos que tu membresía {membresia} en {gym} vence el {fecha}. El monto de renovación es de ${monto}.',
   msg_vencido: 'Hola {nombre}, te queremos de vuelta en {gym}. ¿Te vemos pronto?',
   msg_visita: 'Hola {nombre}, ¡gracias por visitarnos hoy en {gym}!',
-  msg_nuevo: '¡Bienvenido a {gym}, {nombre}! Gracias por activar tu membresía {membresia}.'
+  msg_nuevo: '¡Bienvenido a {gym}, {nombre}! Gracias por activar tu membresía {membresia}.',
+  msg_invitacion: 'Hola {nombre}! ¿Qué tal te fue en tu visita a {gym}? 🦍 Nos encantaría tenerte como parte de la comunidad, ¿te paso nuestros planes y precios?'
 };
 
 const SCHEMA = [
@@ -52,6 +53,8 @@ const SCHEMA = [
      monto REAL, origen TEXT, prestamo TEXT, turno TEXT, registro TEXT, notas TEXT)`,
   `CREATE TABLE IF NOT EXISTS prestamos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, monto REAL, previo REAL, abono REAL, notas TEXT)`,
   `CREATE TABLE IF NOT EXISTS equilibrio_items (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, monto REAL)`,
+  `CREATE TABLE IF NOT EXISTS visitas (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, wa TEXT, fecha TEXT, quien TEXT, notas TEXT,
+     agradecido INTEGER DEFAULT 0, invitado INTEGER DEFAULT 0, convertido INTEGER DEFAULT 0, perdido INTEGER DEFAULT 0, creado TEXT)`,
   `CREATE TABLE IF NOT EXISTS equilibrio_check (mes TEXT, nombre TEXT, PRIMARY KEY(mes, nombre))`,
   `CREATE TABLE IF NOT EXISTS bloqueos (clave TEXT PRIMARY KEY, n INTEGER, hasta INTEGER)`
 ];
@@ -192,6 +195,9 @@ async function apiAdmin(env, req) {
     case 'turno_cerrar': return write(() => turnoCerrar(D, req));
     case 'corte_detalle': return corteDetalle(D, rol, req.id);
     case 'equilibrio_marcar': return write(() => equilibrioMarcar(D, rol, req));
+    case 'visita_guardar': return write(() => visitaGuardar(D, rol, req.visita || {}));
+    case 'visita_marcar': return write(() => visitaMarcar(D, rol, req));
+    case 'visita_eliminar': return write(() => visitaEliminar(D, rol, req.id));
     case 'salida': return write(() => salida(D, rol, req.salida || {}));
     case 'ajustes_leer': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return ajustesLeer(D);
     case 'ajustes_guardar': if (rol !== 'dueno') return { ok: false, error: 'permiso' }; return write(() => ajustesGuardar(D, req.ajustes || {}));
@@ -243,7 +249,7 @@ async function datos(D, rol) {
   const cfg = await leerConfig(D);
   const { ymd: hoy, hm } = ahoraMX();
   const mes = hoy.slice(0, 7), mesIni = mes + '-01', mesFin = eom(hoy);
-  const [socRows, pagRows, venRows, proRows, asiRows, turRows, salRows, preRows] = await Promise.all([
+  const [socRows, pagRows, venRows, proRows, asiRows, turRows, salRows, preRows, visRows] = await Promise.all([
     all(D, 'SELECT * FROM socios ORDER BY num'),
     all(D, 'SELECT * FROM pagos ORDER BY id'),
     all(D, 'SELECT * FROM ventas ORDER BY id'),
@@ -251,8 +257,15 @@ async function datos(D, rol) {
     all(D, 'SELECT socio_id, fecha, hora FROM asistencias WHERE fecha >= ? AND fecha <= ?', mesIni, mesFin),
     all(D, 'SELECT * FROM turnos ORDER BY fecha, hora'),
     all(D, 'SELECT * FROM salidas ORDER BY id'),
-    all(D, 'SELECT * FROM prestamos ORDER BY id')
+    all(D, 'SELECT * FROM prestamos ORDER BY id'),
+    all(D, 'SELECT * FROM visitas ORDER BY id DESC')
   ]);
+  const visitas = visRows.map(v => ({
+    id: v.id, nombre: v.nombre, wa: v.wa || '', fecha: dmy(v.fecha), fechaYmd: v.fecha, quien: v.quien || '', notas: v.notas || '',
+    agradecido: !!v.agradecido, invitado: !!v.invitado, convertido: !!v.convertido, perdido: !!v.perdido,
+    urlGracias: waUrl(cfg, v.wa, cfg.msg_visita, v, { fecha: dmy(v.fecha) }),
+    urlInvitar: waUrl(cfg, v.wa, cfg.msg_invitacion, v, { fecha: dmy(v.fecha) })
+  }));
   const socios = calcularSocios(cfg, socRows, pagRows, hoy);
   const nombreDe = Object.fromEntries(socRows.map(s => [s.id, s.nombre]));
   const out = {
@@ -260,6 +273,7 @@ async function datos(D, rol) {
     periodos: PERIODOS, tarifas: cfg.tarifas, membresias: Object.keys(cfg.tarifas), planes: PERIODOS
   };
   out.socios = socios.map(({ _vence, _ins, ...s }) => s);
+  out.visitas = visitas;
 
   // Asistencia del mes
   const nDias = +mesFin.slice(8, 10);
@@ -493,6 +507,36 @@ async function calcularPeriodo(D, cfg, socio, fecha, periodo) {
   return { inicia, vence: finPeriodo(cfg, inicia, periodo) };
 }
 
+async function visitaGuardar(D, rol, v) {
+  const nombre = String(v.nombre || '').trim().replace(/\s+/g, ' ');
+  if (!nombre) return { ok: false, error: 'falta', campo: 'nombre' };
+  const wa = String(v.wa || '').replace(/\D/g, '').slice(-10);
+  if (v.wa && wa.length !== 10) return { ok: false, error: 'falta', campo: 'wa' };
+  const fecha = isYmd(v.fecha) ? v.fecha : ahoraMX().ymd;
+  const quien = String(v.quien || '').trim(), notas = String(v.notas || '').trim();
+  if (Number(v.id)) {
+    const act = await one(D, 'SELECT id FROM visitas WHERE id = ?', v.id);
+    if (!act) return { ok: false, error: 'no_coincide' };
+    await run(D, 'UPDATE visitas SET nombre=?, wa=?, fecha=?, quien=?, notas=? WHERE id=?', nombre, wa, fecha, quien, notas, v.id);
+    return { ok: true, id: v.id, nuevo: false };
+  }
+  const r = await run(D, 'INSERT INTO visitas(nombre, wa, fecha, quien, notas, creado) VALUES(?,?,?,?,?,?)',
+    nombre, wa, fecha, quien, notas, new Date().toISOString());
+  return { ok: true, id: r.meta.last_row_id, nuevo: true };
+}
+async function visitaMarcar(D, rol, req) {
+  const id = Number(req.id), campo = String(req.campo || '');
+  if (!id || !['agradecido', 'invitado', 'convertido', 'perdido'].includes(campo)) return { ok: false, error: 'falta' };
+  const act = await one(D, 'SELECT id FROM visitas WHERE id = ?', id);
+  if (!act) return { ok: false, error: 'no_coincide' };
+  await run(D, `UPDATE visitas SET ${campo} = ? WHERE id = ?`, req.valor ? 1 : 0, id);
+  return { ok: true };
+}
+async function visitaEliminar(D, rol, id) {
+  if (!Number(id)) return { ok: false, error: 'falta' };
+  await run(D, 'DELETE FROM visitas WHERE id = ?', Number(id));
+  return { ok: true };
+}
 async function pago(D, rol, p) {
   const cfg = await leerConfig(D);
   const socio = await socioPorFila(D, p.fila, p.id);
@@ -660,7 +704,7 @@ async function salida(D, rol, x) {
 
 /* ---------------------------- Ajustes ----------------------------- */
 const AJUSTES_TEXTO = ['gym', 'lada', 'dias_anticipacion', 'tolerancia', 'hora_gracias', 'aviso_minimo', 'umbral_asistencia', 'personal', 'fondo_caja',
-  'msg_recordatorio', 'msg_vencido', 'msg_visita', 'msg_nuevo'];
+  'msg_recordatorio', 'msg_vencido', 'msg_visita', 'msg_nuevo', 'msg_invitacion'];
 async function ajustesLeer(D) {
   const cfg = await leerConfig(D);
   const out = { ok: true, tarifas: cfg.tarifas, prestamos: await all(D, 'SELECT nombre, monto, previo, abono, notas FROM prestamos ORDER BY id'),
