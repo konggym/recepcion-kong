@@ -40,7 +40,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS socios (num INTEGER PRIMARY KEY, id TEXT UNIQUE, nombre TEXT, wa TEXT, membresia TEXT, plan TEXT,
      inscripcion TEXT, nacimiento TEXT, correo TEXT, emergencia TEXT, activo INTEGER DEFAULT 1, notas TEXT, creado TEXT)`,
   `CREATE TABLE IF NOT EXISTS pagos (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, socio_id TEXT, periodo TEXT, monto REAL, metodo TEXT,
-     recibio TEXT, notas TEXT, lista REAL, inicia TEXT, vence TEXT, turno TEXT, creado TEXT)`,
+     recibio TEXT, notas TEXT, lista REAL, inicia TEXT, vence TEXT, turno TEXT, creado TEXT, visita_id INTEGER)`,
   `CREATE INDEX IF NOT EXISTS pagos_socio ON pagos(socio_id)`,
   `CREATE TABLE IF NOT EXISTS asistencias (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT, socio_id TEXT, hora TEXT, registro TEXT, UNIQUE(fecha, socio_id))`,
   `CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT UNIQUE, precio REAL, recibidas INTEGER DEFAULT 0, minimo INTEGER)`,
@@ -122,6 +122,8 @@ async function db(env) {
     const cols = (await all(env.DB, 'PRAGMA table_info(turnos)')).map(c => c.name);
     for (const [c, t] of [['fondo', 'REAL'], ['retiro', 'REAL'], ['retiro_a', 'TEXT']])
       if (!cols.includes(c)) await env.DB.prepare(`ALTER TABLE turnos ADD COLUMN ${c} ${t}`).run();
+    const colsPagos = (await all(env.DB, 'PRAGMA table_info(pagos)')).map(c => c.name);
+    if (!colsPagos.includes('visita_id')) await env.DB.prepare('ALTER TABLE pagos ADD COLUMN visita_id INTEGER').run();
     esquemaListo = true;
   }
   return env.DB;
@@ -268,6 +270,7 @@ async function datos(D, rol) {
   }));
   const socios = calcularSocios(cfg, socRows, pagRows, hoy);
   const nombreDe = Object.fromEntries(socRows.map(s => [s.id, s.nombre]));
+  const nombreVisitaDe = Object.fromEntries(visitas.map(v => [v.id, v.nombre]));
   const out = {
     ok: true, rol, hoy, hora: hm, gym: cfg.gym, horaGracias: cfg.hora_gracias,
     periodos: PERIODOS, tarifas: cfg.tarifas, membresias: Object.keys(cfg.tarifas), planes: PERIODOS
@@ -300,11 +303,15 @@ async function datos(D, rol) {
   out.asistencia = asistencia;
 
   // Pagos y ventas
-  out.pagos = pagRows.slice(-400).map(p => ({
-    fila: p.id, fecha: p.fecha, socio: `${p.socio_id} - ${nombreDe[p.socio_id] || ''}`, id: p.socio_id, nombre: nombreDe[p.socio_id] || '',
-    periodo: p.periodo, monto: p.monto, metodo: p.metodo, recibio: p.recibio, notas: p.notas || '', lista: p.lista || 0,
-    inicia: p.inicia || '', vence: p.vence || '', turno: p.turno || ''
-  }));
+  out.pagos = pagRows.slice(-400).map(p => {
+    const nv = p.visita_id ? (nombreVisitaDe[p.visita_id] || '') : '';
+    return {
+      fila: p.id, fecha: p.fecha, socio: p.visita_id ? `Visita · ${nv}` : `${p.socio_id} - ${nombreDe[p.socio_id] || ''}`,
+      id: p.visita_id ? '' : p.socio_id, nombre: p.visita_id ? nv : (nombreDe[p.socio_id] || ''), visitaId: p.visita_id || null,
+      periodo: p.periodo, monto: p.monto, metodo: p.metodo, recibio: p.recibio, notas: p.notas || '', lista: p.lista || 0,
+      inicia: p.inicia || '', vence: p.vence || '', turno: p.turno || ''
+    };
+  });
   out.ventas = venRows.slice(-300).map(v => ({
     fila: v.id, fecha: v.fecha, socio: v.socio_id ? `${v.socio_id} - ${nombreDe[v.socio_id] || ''}` : '', producto: v.producto,
     cantidad: v.cantidad, precio: v.precio, total: v.total, metodo: v.metodo, notas: v.notas || '', turno: v.turno || ''
@@ -514,15 +521,32 @@ async function visitaGuardar(D, rol, v) {
   if (v.wa && wa.length !== 10) return { ok: false, error: 'falta', campo: 'wa' };
   const fecha = isYmd(v.fecha) ? v.fecha : ahoraMX().ymd;
   const quien = String(v.quien || '').trim(), notas = String(v.notas || '').trim();
-  if (Number(v.id)) {
-    const act = await one(D, 'SELECT id FROM visitas WHERE id = ?', v.id);
-    if (!act) return { ok: false, error: 'no_coincide' };
-    await run(D, 'UPDATE visitas SET nombre=?, wa=?, fecha=?, quien=?, notas=? WHERE id=?', nombre, wa, fecha, quien, notas, v.id);
-    return { ok: true, id: v.id, nuevo: false };
+  const cobro = v.cobro && Number(v.cobro.monto) > 0 ? v.cobro : null;
+  if (cobro) {
+    if (!METODOS.includes(cobro.metodo)) return { ok: false, error: 'falta', campo: 'metodo' };
+    const turno = await turnoAbierto(D);
+    if (cobro.metodo === 'Efectivo' && !turno) return { ok: false, error: 'sin_turno' };
   }
-  const r = await run(D, 'INSERT INTO visitas(nombre, wa, fecha, quien, notas, creado) VALUES(?,?,?,?,?,?)',
-    nombre, wa, fecha, quien, notas, new Date().toISOString());
-  return { ok: true, id: r.meta.last_row_id, nuevo: true };
+  let id = Number(v.id) || 0;
+  if (id) {
+    const act = await one(D, 'SELECT id FROM visitas WHERE id = ?', id);
+    if (!act) return { ok: false, error: 'no_coincide' };
+    await run(D, 'UPDATE visitas SET nombre=?, wa=?, fecha=?, quien=?, notas=? WHERE id=?', nombre, wa, fecha, quien, notas, id);
+  } else {
+    const r = await run(D, 'INSERT INTO visitas(nombre, wa, fecha, quien, notas, creado) VALUES(?,?,?,?,?,?)',
+      nombre, wa, fecha, quien, notas, new Date().toISOString());
+    id = r.meta.last_row_id;
+  }
+  let pagoId = null;
+  if (cobro) {
+    const turno = await turnoAbierto(D);
+    const pf = isYmd(cobro.fecha) ? cobro.fecha : fecha;
+    const rp = await run(D, `INSERT INTO pagos(fecha, socio_id, periodo, monto, metodo, recibio, notas, lista, inicia, vence, turno, creado, visita_id)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, pf, '', 'Visita', Number(cobro.monto), cobro.metodo,
+      rol === 'dueno' ? 'Dueño' : 'Recepción', `Visita: ${nombre}`, 0, pf, pf, turno ? turno.id : '', new Date().toISOString(), id);
+    pagoId = rp.meta.last_row_id;
+  }
+  return { ok: true, id, nuevo: !Number(v.id), pagoId };
 }
 async function visitaMarcar(D, rol, req) {
   const id = Number(req.id), campo = String(req.campo || '');

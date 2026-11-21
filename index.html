@@ -513,6 +513,7 @@ function toast(msg, err) {
 }
 const socios = () => (S.d && S.d.socios) || [];
 const visitas = () => (S.d && S.d.visitas) || [];
+const visitaTarifa = () => { const vs = Object.values((S.d && S.d.tarifas) || {}).map(t => Number(t.Visita) || 0).filter(x => x > 0); return vs.length ? Math.min(...vs) : ''; };
 const socioBy = fila => socios().find(s => s.fila === Number(fila));
 const asisOf = s => (S.d && S.d.asistencia && S.d.asistencia.socios[s.id]) || {};
 const sentKey = () => 'd' + hoy();
@@ -851,11 +852,21 @@ function openVisitaForm(v) {
     <div class="f-row"><label class="f"><span>Fecha de visita</span><input type="date" id="vf" value="${esc(v.fechaYmd || hoy())}"></label>
     <label class="f"><span>¿Quién lo trajo?</span><input id="vq" value="${esc(v.quien)}" placeholder="Opcional"></label></div>
     <label class="f"><span>Notas</span><input id="vo" value="${esc(v.notas)}" placeholder="Opcional"></label>
+    <h2 style="margin:10px 0 2px;font-size:15px">Cobro de la visita ${nuevo ? '' : '(deja $0 si no vas a cobrar ahora)'}</h2>
+    <div class="f-row"><label class="f"><span>Monto</span><input id="vm" inputmode="decimal" value="${nuevo ? esc(visitaTarifa()) : ''}" placeholder="0"></label>
+    <label class="f"><span>Método</span><div class="seg f" id="vmet">${METODOS.map(x => `<button type="button" data-v="${x}" class="${x === 'Efectivo' ? 'on' : ''}">${x}</button>`).join('')}</div></label></div>
     <div class="msg" id="vmsg"></div>
     <button class="btn" data-save id="vsave">${nuevo ? 'Registrar visita' : 'Guardar cambios'}</button>`, () => {
+    $$('#vmet button').forEach(b => b.onclick = () => $$('#vmet button').forEach(x => x.classList.toggle('on', x === b)));
     $('#vsave').onclick = async () => {
-      const visita = { id: v.id, nombre: $('#vn').value, wa: $('#vw').value, fecha: $('#vf').value, quien: $('#vq').value, notas: $('#vo').value };
-      const r = await send('visita_guardar', { visita }, nuevo ? 'Visita registrada' : 'Cambios guardados');
+      const monto = Number(String($('#vm').value || '').replace(/[^\d.]/g, ''));
+      const metodo = $('#vmet .on').dataset.v;
+      if (monto > 0 && metodo === 'Efectivo' && cajaActiva() && !C().turno) return pedirTurno();
+      const visita = {
+        id: v.id, nombre: $('#vn').value, wa: $('#vw').value, fecha: $('#vf').value, quien: $('#vq').value, notas: $('#vo').value,
+        cobro: monto > 0 ? { monto, metodo, fecha: $('#vf').value } : null
+      };
+      const r = await send('visita_guardar', { visita }, monto > 0 ? `${nuevo ? 'Visita registrada' : 'Guardada'} · cobro de ${money(monto)}` : (nuevo ? 'Visita registrada' : 'Cambios guardados'));
       if (r) closeSheet();
     };
   });
@@ -945,6 +956,7 @@ function renderCobros(m) {
     const pv = socios().filter(s => s.estado === 'Por vencer' || s.estado === 'Vence hoy').sort((a, b) => a.dias - b.dias);
     const ve = socios().filter(s => s.estado === 'Vencido').sort((a, b) => b.dias - a.dias);
     const gv = socios().filter(s => s.graciasVisita), gn = socios().filter(s => s.graciasNuevo);
+    const porAgradecer = visitas().filter(v2 => !v2.agradecido && !v2.perdido && !v2.convertido).sort((a, b) => b.id - a.id);
     const item = (s, url, key, sub, end) => {
       const sent = isSent(key);
       return `<div class="li ${sent ? 'sent' : ''}"><div class="av">${esc(initial(s.nombre))}</div><div class="mid tap" data-f="${s.fila}" style="cursor:pointer"><div class="t">${esc(s.nombre)}</div><div class="s">${sub}</div></div>
@@ -957,7 +969,11 @@ function renderCobros(m) {
       <div class="card flush">${ve.length ? ve.map(s => item(s, s.url, 'v' + s.id, `Venció ${esc(dmyNice(s.vence))} · hace ${Math.abs(s.dias)} día${Math.abs(s.dias) === 1 ? '' : 's'}`)).join('') : '<div class="empty">Sin vencidos</div>'}</div>
       <h2>Agradecimientos de hoy</h2>
       <p class="muted small" style="margin:-4px 0 8px">Envíalos hacia las ${esc(S.d.horaGracias)}.</p>
-      <div class="card flush">${gv.length + gn.length ? gn.map(s => item(s, s.urlNuevo, 'n' + s.id, `Socio nuevo · ${esc(s.membresia)}`)).join('') + gv.map(s => item(s, s.urlVisita, 'g' + s.id, 'Visita de hoy')).join('') : '<div class="empty">Hoy no hay visitas ni socios nuevos</div>'}</div>`;
+      <div class="card flush">${gv.length + gn.length ? gn.map(s => item(s, s.urlNuevo, 'n' + s.id, `Socio nuevo · ${esc(s.membresia)}`)).join('') + gv.map(s => item(s, s.urlVisita, 'g' + s.id, 'Visita de hoy')).join('') : '<div class="empty">Hoy no hay visitas ni socios nuevos</div>'}</div>
+      <h2>Visitas por agradecer <span class="n">${porAgradecer.length}</span></h2>
+      <p class="muted small" style="margin:-4px 0 8px">Personas registradas en Socios → Visitas que aún no reciben su agradecimiento.</p>
+      <div class="card flush">${porAgradecer.length ? porAgradecer.map(v2 => `<div class="li"><div class="av">${esc(initial(v2.nombre))}</div><div class="mid tap" data-vid="${v2.id}" style="cursor:pointer"><div class="t">${esc(v2.nombre)}</div><div class="s">${esc(dmyNice(v2.fecha))}${v2.quien ? ' · trajo: ' + esc(v2.quien) : ''}</div></div>
+        <div class="end">${v2.urlGracias ? `<a class="btn sm wa" href="${esc(v2.urlGracias)}" target="_blank" rel="noopener" data-vg="${v2.id}">Enviar</a>` : `<button class="btn sm ghost" data-ved="${v2.id}">Falta WhatsApp</button>`}</div></div>`).join('') : '<div class="empty">No hay visitas pendientes de agradecer</div>'}</div>`;
   } else {
     const mesK = hoy().slice(0, 7);
     const delMes = S.d.pagos.filter(p => p.fecha.slice(0, 7) === mesK);
